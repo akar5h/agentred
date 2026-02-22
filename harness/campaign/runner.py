@@ -9,6 +9,7 @@ from typing import Optional
 from harness.attack.base import AttackStrategy
 from harness.attack.fixtures.render import load_and_render_fixture_bytes, render_template_text
 from harness.campaign.context import RunContext
+from harness.campaign.memory_writer import build_finding_memory, write_finding_memory
 from harness.core.enums import Status, VesselKind
 from harness.core.exceptions import InfraError
 from harness.core.schemas import JudgeResult, RunConfig, TelemetryEvent, TestSpec
@@ -51,6 +52,7 @@ class CampaignRunner:
         self.emitter = emitter
         self.config = config
         self.reflection_controller = reflection_controller or ReflectionController()
+        self._cycle: int = 0
 
     async def run_one(self, spec: TestSpec, rep: int = 1) -> JudgeResult:
         run_id = uuid.uuid4().hex
@@ -304,6 +306,14 @@ class CampaignRunner:
                 },
             )
         )
+
+        if (
+            self.config.engagement_id
+            and not self.config.no_muzzle
+            and result.status in (Status.SUCCESS, Status.INJECTION)
+        ):
+            memory_entry = build_finding_memory(result, spec, observation, self._cycle)
+            write_finding_memory(memory_entry, self.config.engagement_id)
 
         return result
 
