@@ -568,14 +568,21 @@ python scripts/run_campaign.py \
   --catalog harness/attack/library/direct/direct_chat_injection_v1.json \
   --base-url http://localhost:8001 \
   --runs-per-scenario 1 \
+  [--engagement-id my-engagement-001] \
+  [--no-muzzle] \
   [--adaptive] \
+  [--max-muzzle-cycles 3] \
+  [--top-k-vessels 3] \
   [--attacker-model moonshotai/kimi-k2-0905] \
   [--no-analyst] \
   [--scenario-filter LB-01,LB-02] \
   [--run-dir reports/runs/my_run]
 ```
 
-**Auto output directory:** `reports/runs/<timestamp>_<mode>_<catalog_stem>/`
+**Auto output directory:**
+- MUZZLE mode (default): `reports/<engagement_id>/` — scopes all output + memory per engagement
+- `--no-muzzle` mode: `reports/runs/<timestamp>_<mode>_<catalog_stem>/` — per-run directory (Phase 1 behavior)
+- If `--engagement-id` is not provided, auto-generated as `eng-<timestamp>`
 
 **Files written:**
 - `runs.jsonl` — one JudgeResult per line

@@ -221,6 +221,174 @@ class RunConfig(BaseModel):
     run_dir: str = ""
     max_cost_usd: float = 10.0
     target_profile_path: str = ""
+    # MUZZLE orchestrator fields (Phase E)
+    engagement_id: str = ""             # scopes FindingMemory + reports output dir
+    max_muzzle_cycles: int = 3          # max outer loop iterations before stopping
+    top_k_vessels: int = 3              # VesselCandidates to graft into TestSpecs
+    objective_goals: list[str] = ["prompt_exfil", "state_exfil"]  # ObjectiveReplay goals
+    no_muzzle: bool = False             # if True: skip Phase E, run catalog-only (--no-muzzle)
+```
+
+### Phase E Schemas
+
+These schemas live in `harness/core/schemas.py` alongside the campaign schemas above.
+They are defined in Phase 0 so every later phase can import from `harness.core.schemas`
+without circular dependencies.
+
+### `FindingMemory`
+
+```python
+class FindingMemory(BaseModel):
+    scenario_id: str
+    attack_surface: str                 # e.g. "direct_chat", "indirect_upload"
+    vessel_kind: str                    # VesselKind.value string
+    technique_family: str               # e.g. "loop_pressure", "grafted_direct_prompt"
+    oracle_codes_fired: list[str]       # hard flag keys that fired
+    winning_turn: str                   # exact turn text that triggered the finding
+    canary_confirmed: bool = False
+    cycle: int = 0                      # MUZZLE outer loop iteration that produced this
+```
+
+### `ExplorationTask`
+
+```python
+class ExplorationTask(BaseModel):
+    task_id: str
+    description: str
+    turns: list[str]
+    expected_actions: list[str] = []   # hints for Summarizer, not assertions
+```
+
+### `TraceStep`
+
+```python
+class TraceStep(BaseModel):
+    turn_index: int
+    message_sent: str
+    response: str
+    docs_before: list[dict] = []
+    docs_after: list[dict] = []
+    duration_ms: int = 0
+    inferred_actions: list[str] = []
+```
+
+### `ExplorationTrace`
+
+```python
+class ExplorationTrace(BaseModel):
+    task_id: str
+    session_id: str
+    steps: list[TraceStep]
+    target_base_url: str = ""
+```
+
+### `ExecutionStep`
+
+```python
+class ExecutionStep(BaseModel):
+    step_type: str                      # chat_turn | file_upload | doc_created | doc_read_hint | state_change
+    artifact_ref: str | None = None
+    content_preview: str = ""
+    turn_index: int = 0
+```
+
+### `SummarizedTrace`
+
+```python
+class SummarizedTrace(BaseModel):
+    trace_id: str
+    steps: list[ExecutionStep]
+    inferred_surfaces: list[str] = []  # e.g. ["file_upload", "doc_memory", "chat_direct"]
+```
+
+### `VesselCandidate`
+
+```python
+class VesselCandidate(BaseModel):
+    vessel_kind: VesselKind
+    delivery_field: str                 # e.g. "message", "filename", "memory_key"
+    exploit_method: str
+    exploitability_score: float = 0.0  # 0.0–1.0 composite
+    saliency_score: float = 0.0
+    surface_budget_bytes: int = -1     # -1 = not yet measured
+    privilege_required: str = "public"
+    source_step_index: int = 0
+```
+
+### `CatalogEntry`
+
+```python
+class CatalogEntry(BaseModel):
+    entry_id: str
+    suite_id: str
+    attack_surface: str
+    technique_family: str
+    vessel_kinds: list[str] = []
+    turns: list[str] = []
+    prelude_turns: list[str] = []
+    oracle_codes: list[str] = []
+    severity: str = "medium"
+    description: str = ""
+```
+
+### `AttackCatalogFile`
+
+```python
+class AttackCatalogFile(BaseModel):
+    catalog_id: str
+    version: str
+    entries: list[CatalogEntry] = []
+```
+
+### `CatalogMatchResult`
+
+```python
+class CatalogMatchResult(BaseModel):
+    matched_entries: list[CatalogEntry] = []
+    coverage_gaps: list[VesselCandidate] = []
+    depth_gaps: list[CatalogEntry] = []
+    match_confidence: dict[str, float] = {}  # entry_id → 0.0–1.0
+```
+
+### `CatalogEnrichmentProposal`
+
+```python
+class CatalogEnrichmentProposal(BaseModel):
+    proposal_type: str                  # "improve_existing" | "add_new_entry"
+    source_entry_id: str | None = None
+    proposed_entry: CatalogEntry
+    evidence: JudgeResult
+    confidence: float = 0.0
+```
+
+### `ObjectiveTask`
+
+```python
+class ObjectiveTask(BaseModel):
+    goal_id: str                        # e.g. "prompt_exfil", "state_exfil"
+    goal_type: str                      # "exfiltration" | "privilege_escalation" | "unauthorized_write"
+    elicitation_turns: list[str]
+    description: str = ""
+```
+
+### `ObjectiveTrace`
+
+```python
+class ObjectiveTrace(BaseModel):
+    goal_id: str
+    session_id: str
+    responses: list[str] = []
+    inferred_disclosure_level: str = "none"  # "none" | "partial" | "full"
+```
+
+### `ObjectiveScript`
+
+```python
+class ObjectiveScript(BaseModel):
+    goal_id: str
+    imperative: str                     # one imperative sentence for the attack turn
+    context_hint: str = ""              # victim-specific context for LlmSynthStrategy
+    distilled_from: list[str] = []      # victim responses used to produce this
 ```
 
 ---
@@ -330,13 +498,18 @@ class AttackStrategy(ABC):
         objective: str,
         base_turn: str,
         transcript: list[dict],
+        finding_memory: list | None = None,     # list[FindingMemory] — avoids circular import
+        current_surface: str | None = None,
+        current_technique: str | None = None,
     ) -> str:
         """
         Given the base attack turn and the current transcript,
         return the turn to actually send to the victim.
 
         StaticStrategy returns base_turn unchanged.
-        LlmSynthStrategy uses PyRIT to mutate the turn adaptively.
+        LlmSynthStrategy mutates the turn using LLM guidance (see TRD-07, TRD-12 §1d).
+        finding_memory: if provided, winning turns from prior cycles bias mutation.
+        current_surface / current_technique: filters which memory entries are relevant.
         """
 
     @property
