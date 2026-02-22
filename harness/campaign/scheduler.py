@@ -29,6 +29,7 @@ class Scheduler:
         runs_per_scenario: int = 1,
         scenario_filter: Optional[List[str]] = None,
         on_result: Optional[Callable[[JudgeResult], None]] = None,
+        on_before_run: Optional[Callable[["TestSpec", int], None]] = None,
     ) -> List[JudgeResult]:
         selected = set(scenario_filter or [])
         out: List[JudgeResult] = []
@@ -43,6 +44,9 @@ class Scheduler:
             for rep in range(1, max(1, int(runs_per_scenario)) + 1):
                 if cost_spent >= self.max_cost_usd:
                     return out
+
+                if on_before_run is not None:
+                    on_before_run(spec, rep)
 
                 result = await self.runner.run_one(spec, rep=rep)
                 out.append(result)

@@ -21,6 +21,21 @@ class AttackStrategy(ABC):
     ) -> str:
         """Return the turn to send for the current step."""
 
+    async def generate_next_turn(
+        self,
+        *,
+        scenario_id: str,
+        objective: str,
+        transcript: list[dict],
+        finding_memory: list | None = None,
+    ) -> str:
+        """
+        Generate the next attack turn dynamically from the current transcript.
+        Default implementation raises NotImplementedError.
+        Override in ChainStrategy.
+        """
+        raise NotImplementedError
+
     @property
     @abstractmethod
     def is_adaptive(self) -> bool:

@@ -141,42 +141,84 @@ class CampaignRunner:
                     )
                 )
 
-            for turn in spec.turns:
-                rendered = render_template_text(turn, session_id=session_id, canary_token=canary_token)
-                final_turn = await self.strategy.next_turn(
-                    scenario_id=spec.scenario_id,
-                    objective=spec.objective,
-                    base_turn=rendered,
-                    transcript=ctx.transcript,
-                )
-                ctx.generated_turns.append(final_turn)
-                ctx.transcript.append({"role": "user", "content": final_turn})
-                self.emitter.emit(
-                    TelemetryEvent(
-                        run_id=run_id,
-                        scenario_id=spec.scenario_id,
-                        suite_id=spec.suite_id,
-                        event_type=events.ATTACK_TURN_SENT,
-                        turn_index=ctx.executed_turns,
-                        content=final_turn,
-                        canary_token=canary_token,
+            if spec.chain_mode and hasattr(self.strategy, "generate_next_turn"):
+                for _step in range(max(1, int(spec.max_chain_turns))):
+                    try:
+                        next_t = await self.strategy.generate_next_turn(
+                            scenario_id=spec.scenario_id,
+                            objective=spec.objective,
+                            transcript=ctx.transcript,
+                        )
+                    except NotImplementedError:
+                        break
+                    if not next_t or str(next_t).strip().upper() == "STOP":
+                        break
+
+                    ctx.generated_turns.append(next_t)
+                    ctx.transcript.append({"role": "user", "content": next_t})
+                    self.emitter.emit(
+                        TelemetryEvent(
+                            run_id=run_id,
+                            scenario_id=spec.scenario_id,
+                            suite_id=spec.suite_id,
+                            event_type=events.ATTACK_TURN_SENT,
+                            turn_index=ctx.executed_turns,
+                            content=next_t,
+                            canary_token=canary_token,
+                        )
                     )
-                )
-                result = await self.victim.send_turn(session_id, final_turn, timeout=self.config.timeout_seconds)
-                ctx.transcript.append({"role": "assistant", "content": result["response"]})
-                ctx.responses.append(result["response"])
-                ctx.executed_turns += 1
-                self.emitter.emit(
-                    TelemetryEvent(
-                        run_id=run_id,
-                        scenario_id=spec.scenario_id,
-                        suite_id=spec.suite_id,
-                        event_type=events.ATTACK_TURN_RECV,
-                        turn_index=ctx.executed_turns,
-                        content=result["response"],
-                        canary_token=canary_token,
+                    result = await self.victim.send_turn(session_id, next_t, timeout=self.config.timeout_seconds)
+                    ctx.transcript.append({"role": "assistant", "content": result["response"]})
+                    ctx.responses.append(result["response"])
+                    ctx.executed_turns += 1
+                    self.emitter.emit(
+                        TelemetryEvent(
+                            run_id=run_id,
+                            scenario_id=spec.scenario_id,
+                            suite_id=spec.suite_id,
+                            event_type=events.ATTACK_TURN_RECV,
+                            turn_index=ctx.executed_turns,
+                            content=result["response"],
+                            canary_token=canary_token,
+                        )
                     )
-                )
+            else:
+                for turn in spec.turns:
+                    rendered = render_template_text(turn, session_id=session_id, canary_token=canary_token)
+                    final_turn = await self.strategy.next_turn(
+                        scenario_id=spec.scenario_id,
+                        objective=spec.objective,
+                        base_turn=rendered,
+                        transcript=ctx.transcript,
+                    )
+                    ctx.generated_turns.append(final_turn)
+                    ctx.transcript.append({"role": "user", "content": final_turn})
+                    self.emitter.emit(
+                        TelemetryEvent(
+                            run_id=run_id,
+                            scenario_id=spec.scenario_id,
+                            suite_id=spec.suite_id,
+                            event_type=events.ATTACK_TURN_SENT,
+                            turn_index=ctx.executed_turns,
+                            content=final_turn,
+                            canary_token=canary_token,
+                        )
+                    )
+                    result = await self.victim.send_turn(session_id, final_turn, timeout=self.config.timeout_seconds)
+                    ctx.transcript.append({"role": "assistant", "content": result["response"]})
+                    ctx.responses.append(result["response"])
+                    ctx.executed_turns += 1
+                    self.emitter.emit(
+                        TelemetryEvent(
+                            run_id=run_id,
+                            scenario_id=spec.scenario_id,
+                            suite_id=spec.suite_id,
+                            event_type=events.ATTACK_TURN_RECV,
+                            turn_index=ctx.executed_turns,
+                            content=result["response"],
+                            canary_token=canary_token,
+                        )
+                    )
 
             ctx.after_docs = await self.victim.list_docs(session_id, timeout=self.config.timeout_seconds)
             before_ids = {d.get("id") for d in ctx.before_docs if isinstance(d, dict)}

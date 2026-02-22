@@ -35,6 +35,8 @@ class TestSpec(_HarnessBaseModel):
     success_criteria: str = ""
     attack_surface: Optional[AttackSurface] = None
     technique_family: str = ""
+    chain_mode: bool = False
+    max_chain_turns: int = 8
 
 
 class JudgeResult(_HarnessBaseModel):

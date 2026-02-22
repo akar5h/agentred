@@ -110,3 +110,14 @@ def test_load_test_specs_creates_vessel_specs_from_uploads(tmp_path) -> None:
     assert vessel.kind == VesselKind.UPLOADED_DOCUMENT
     assert vessel.fixture_path == "fixtures/a.md"
     assert vessel.render_template is True
+
+
+def test_load_test_specs_reads_chain_fields(tmp_path) -> None:
+    payload = _base_catalog()
+    payload["attacks"][0]["chain_mode"] = True
+    payload["attacks"][0]["max_chain_turns"] = 5
+    path = _write_catalog(tmp_path, payload)
+
+    _, specs = load_test_specs(path)
+    assert specs[0].chain_mode is True
+    assert specs[0].max_chain_turns == 5

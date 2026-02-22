@@ -40,6 +40,20 @@ def test_test_spec_minimal() -> None:
     assert t.adaptive is False
     assert t.prelude_turns == []
     assert t.vessels == []
+    assert t.chain_mode is False
+    assert t.max_chain_turns == 8
+
+
+def test_test_spec_chain_fields_override() -> None:
+    t = TestSpec(
+        scenario_id="LB-01",
+        suite_id="direct_chat_injection_v1",
+        turns=["Hello"],
+        chain_mode=True,
+        max_chain_turns=5,
+    )
+    assert t.chain_mode is True
+    assert t.max_chain_turns == 5
 
 
 def test_judge_result_minimal() -> None:

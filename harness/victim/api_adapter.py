@@ -72,7 +72,7 @@ class RestApiAdapter(VictimAdapter):
             async with httpx.AsyncClient(base_url=self.base_url) as client:
                 return await client.request(method, path, timeout=timeout, **kwargs)
         except httpx.HTTPError as exc:
-            raise InfraError(str(exc)) from exc
+            raise InfraError(f"{type(exc).__name__}: {exc!r}") from exc
 
     async def send_turn(
         self,

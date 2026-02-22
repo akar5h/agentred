@@ -20,8 +20,9 @@ def _doc_identifier(doc: dict) -> str:
 
 
 class Explorer:
-    def __init__(self, victim: VictimAdapter):
+    def __init__(self, victim: VictimAdapter, timeout_seconds: float = 120.0):
         self.victim = victim
+        self.timeout_seconds = float(timeout_seconds)
 
     async def run_task(self, task: ExplorationTask) -> ExplorationTrace:
         session_id = f"explore-{task.task_id}-{uuid4().hex[:8]}"
@@ -29,11 +30,11 @@ class Explorer:
 
         steps: list[TraceStep] = []
         for turn_index, message in enumerate(task.turns):
-            docs_before = await self.victim.list_docs(session_id)
+            docs_before = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
             t0 = time.monotonic_ns()
-            response_data = await self.victim.send_turn(session_id, message)
+            response_data = await self.victim.send_turn(session_id, message, timeout=self.timeout_seconds)
             duration_ms = int((time.monotonic_ns() - t0) // 1_000_000)
-            docs_after = await self.victim.list_docs(session_id)
+            docs_after = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
 
             step = TraceStep(
                 turn_index=turn_index,

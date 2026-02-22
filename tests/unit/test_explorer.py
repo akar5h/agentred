@@ -15,6 +15,8 @@ class FakeVictim:
         self._scripted = scripted
         self._step_index: dict[str, int] = {}
         self._docs: dict[str, list[dict]] = {}
+        self.list_docs_timeouts: list[float] = []
+        self.send_turn_timeouts: list[float] = []
 
     async def reset_session(self, session_id: str, *, timeout: float = 10.0) -> None:
         del timeout
@@ -22,6 +24,7 @@ class FakeVictim:
         self._docs[session_id] = []
 
     async def list_docs(self, session_id: str, *, timeout: float = 30.0) -> list[dict]:
+        self.list_docs_timeouts.append(timeout)
         del timeout
         return [dict(d) for d in self._docs.get(session_id, [])]
 
@@ -33,6 +36,7 @@ class FakeVictim:
         mode: str = "chat",
         timeout: float = 120.0,
     ) -> dict:
+        self.send_turn_timeouts.append(timeout)
         del mode, timeout, message
         index = self._step_index.get(session_id, 0)
         payload = self._scripted[min(index, len(self._scripted) - 1)] if self._scripted else {"response": ""}
@@ -137,3 +141,15 @@ async def test_explorer_run_all_prepends_memory_biased_tasks(tmp_path, monkeypat
 
     assert len(traces) >= 3
     assert traces[0].task_id.startswith("focused-direct_chat-")
+
+
+@pytest.mark.asyncio
+async def test_explorer_passes_timeout_to_victim_calls() -> None:
+    victim = FakeVictim([{"response": "ok"}])
+    explorer = Explorer(victim, timeout_seconds=42.0)
+    task = ExplorationTask(task_id="t-timeout", description="timeout", turns=["hello"])
+
+    await explorer.run_task(task)
+
+    assert victim.send_turn_timeouts == [42.0]
+    assert victim.list_docs_timeouts == [42.0, 42.0]

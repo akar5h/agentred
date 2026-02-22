@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - optional dependency
     MemoryMiddleware = None
     SummarizationMiddleware = None
 
+from harness.attack.synthesis.chain_strategy import ChainStrategy
 from harness.campaign.runner import CampaignRunner
 from harness.core.schemas import ExplorationTask, ObjectiveScript, RunConfig, VesselCandidate
 from harness.explorer.explorer import Explorer
@@ -126,15 +127,24 @@ class MuzzleOrchestrator:
         exploration_tasks: list[ExplorationTask],
         cycle: int,
         on_result: Optional[Callable[[Any], None]] = None,
+        progress_fn: Optional[Callable[[str], None]] = None,
     ) -> MuzzleCycleResult:
-        explorer = Explorer(self.victim)
+        def _progress(msg: str) -> None:
+            if progress_fn:
+                progress_fn(msg)
+
+        _progress(f"[cycle {cycle}] Explorer: running {len(exploration_tasks)} tasks...")
+        explorer = Explorer(self.victim, timeout_seconds=self.config.timeout_seconds)
         traces = await explorer.run_all(exploration_tasks, engagement_id=self.config.engagement_id or None)
         summarized = [self.summarizer.summarize(t) for t in traces]
+        surfaces_seen = sorted({s for st in summarized for s in st.inferred_surfaces})
+        _progress(f"[cycle {cycle}] Explorer done: {len(traces)} traces, surfaces={surfaces_seen}")
 
         all_candidates: list[VesselCandidate] = []
         for st in summarized:
             all_candidates.extend(self.grafter.discover(st))
         ranked = self.grafter.rank(all_candidates)
+        _progress(f"[cycle {cycle}] Grafter: {len(ranked)} ranked candidates — {[c.vessel_kind.value for c in ranked]}")
 
         api_key = os.getenv(self.config.analyst_api_key_env, "").strip()
         replayer = ObjectiveReplayer(
@@ -145,11 +155,19 @@ class MuzzleOrchestrator:
         objective_script: ObjectiveScript | None = None
         for goal in MVP_GOALS:
             if goal.goal_id in self.config.objective_goals:
+                _progress(f"[cycle {cycle}] ObjectiveReplayer: eliciting goal '{goal.goal_id}'...")
                 objective_script = await replayer.run_and_distill(goal, engagement_id=self.config.engagement_id or None)
                 if objective_script and objective_script.imperative:
+                    _progress(f"[cycle {cycle}] ObjectiveReplayer: imperative='{objective_script.imperative[:80]}'")
                     break
 
-        suite = self.grafter.build_suite(ranked, objective_script) if objective_script and ranked else []
+        chain_active = isinstance(self.runner.strategy, ChainStrategy)
+        suite = (
+            self.grafter.build_suite(ranked, objective_script, chain_strategy_active=chain_active)
+            if objective_script and ranked
+            else []
+        )
+        _progress(f"[cycle {cycle}] Grafter suite: {len(suite)} TestSpecs grafted")
 
         self.runner._cycle = int(cycle)
         results = await self.runner.run_all(suite, on_result=on_result)
@@ -167,12 +185,13 @@ class MuzzleOrchestrator:
         self,
         exploration_tasks: list[ExplorationTask],
         on_result: Optional[Callable[[Any], None]] = None,
+        progress_fn: Optional[Callable[[str], None]] = None,
     ) -> list[MuzzleCycleResult]:
         all_results: list[MuzzleCycleResult] = []
         seen_surfaces: set[str] = set()
 
         for cycle in range(max(1, int(self.config.max_muzzle_cycles))):
-            result = await self.run_cycle(exploration_tasks, cycle=cycle, on_result=on_result)
+            result = await self.run_cycle(exploration_tasks, cycle=cycle, on_result=on_result, progress_fn=progress_fn)
             all_results.append(result)
 
             new_surfaces = set(result.surfaces_found) - seen_surfaces

@@ -106,6 +106,8 @@ def _attack_to_spec(attack: dict[str, Any], catalog: dict[str, Any]) -> TestSpec
         success_criteria=str(attack.get("success_criteria", "")),
         attack_surface=_infer_attack_surface(catalog),
         technique_family=str(attack.get("technique_family", "")),
+        chain_mode=bool(attack.get("chain_mode", False)),
+        max_chain_turns=int(attack.get("max_chain_turns", 8)),
     )
 
 

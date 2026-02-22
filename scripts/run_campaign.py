@@ -214,7 +214,7 @@ async def _run(args: argparse.Namespace) -> int:
         scheduler = Scheduler(runner=runner, max_cost_usd=config.max_cost_usd)
 
         def on_result(result):
-            row = result.model_dump()
+            row = result.model_dump(mode="json")
             rows.append(row)
             append_jsonl(runs_jsonl, row)
 
