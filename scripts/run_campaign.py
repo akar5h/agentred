@@ -37,17 +37,25 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario-filter", default="", help="Comma-separated scenario IDs")
     parser.add_argument("--run-dir", default="", help="Output directory")
     parser.add_argument("--target-mode", default="chat", choices=["chat", "stream"])
+    # MUZZLE flags
+    parser.add_argument("--engagement-id", default="", help="Engagement ID (scopes MUZZLE memory + report dir)")
+    parser.add_argument("--no-muzzle", action="store_true", help="Skip MUZZLE Phase E; run catalog only")
+    parser.add_argument("--max-muzzle-cycles", type=int, default=3, help="Max MUZZLE outer loop iterations")
+    parser.add_argument("--top-k-vessels", type=int, default=3, help="Top-k VesselCandidates to graft")
     return parser.parse_args()
 
 
-def _default_run_dir(catalog: str, mode: str) -> Path:
+def _default_run_dir(catalog: str, mode: str, engagement_id: str = "") -> Path:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     stem = Path(catalog).stem
+    if engagement_id:
+        return Path("reports") / engagement_id / f"{ts}_{mode}_{stem}"
     return Path("reports") / "runs" / f"{ts}_{mode}_{stem}"
 
 
 async def _run(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir) if args.run_dir else _default_run_dir(args.catalog, args.target_mode)
+    engagement_id = str(args.engagement_id).strip()
+    run_dir = Path(args.run_dir) if args.run_dir else _default_run_dir(args.catalog, args.target_mode, engagement_id)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     config = RunConfig(
@@ -60,6 +68,10 @@ async def _run(args: argparse.Namespace) -> int:
         analyst_enabled=not bool(args.no_analyst),
         run_dir=str(run_dir),
         scenario_filter=[s.strip() for s in str(args.scenario_filter).split(",") if s.strip()],
+        engagement_id=engagement_id,
+        no_muzzle=bool(args.no_muzzle),
+        max_muzzle_cycles=int(args.max_muzzle_cycles),
+        top_k_vessels=int(args.top_k_vessels),
     )
 
     catalog, specs = load_test_specs(config.catalog_path)

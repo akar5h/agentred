@@ -16,6 +16,10 @@ dependencies = [
   "python-multipart>=0.0.9"
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["harness*"]
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",

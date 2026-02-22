@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from harness.attack.base import AttackStrategy
 
 
@@ -13,6 +15,9 @@ class StaticStrategy(AttackStrategy):
         objective: str,
         base_turn: str,
         transcript: list[dict],
+        finding_memory: Optional[list[Any]] = None,
+        current_surface: Optional[str] = None,
+        current_technique: Optional[str] = None,
     ) -> str:
         return base_turn
 

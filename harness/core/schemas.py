@@ -102,3 +102,128 @@ class RunConfig(_HarnessBaseModel):
     run_dir: str = ""
     max_cost_usd: float = 10.0
     target_profile_path: str = ""
+    # MUZZLE orchestrator fields (Phase E)
+    engagement_id: str = ""
+    max_muzzle_cycles: int = 3
+    top_k_vessels: int = 3
+    objective_goals: list[str] = Field(default_factory=lambda: ["prompt_exfil", "state_exfil"])
+    no_muzzle: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Phase E schemas — Explorer / Grafter / ObjectiveReplay / MUZZLE memory
+# ---------------------------------------------------------------------------
+
+
+class FindingMemory(_HarnessBaseModel):
+    scenario_id: str
+    attack_surface: str
+    vessel_kind: str
+    technique_family: str
+    oracle_codes_fired: list[str] = Field(default_factory=list)
+    winning_turn: str
+    canary_confirmed: bool = False
+    cycle: int = 0
+
+
+class ExplorationTask(_HarnessBaseModel):
+    task_id: str
+    description: str
+    turns: list[str]
+    expected_actions: list[str] = Field(default_factory=list)
+
+
+class TraceStep(_HarnessBaseModel):
+    turn_index: int
+    message_sent: str
+    response: str
+    docs_before: list[dict] = Field(default_factory=list)
+    docs_after: list[dict] = Field(default_factory=list)
+    duration_ms: int = 0
+    inferred_actions: list[str] = Field(default_factory=list)
+
+
+class ExplorationTrace(_HarnessBaseModel):
+    task_id: str
+    session_id: str
+    steps: list[TraceStep]
+    target_base_url: str = ""
+
+
+class ExecutionStep(_HarnessBaseModel):
+    step_type: str
+    artifact_ref: Optional[str] = None
+    content_preview: str = ""
+    turn_index: int = 0
+
+
+class SummarizedTrace(_HarnessBaseModel):
+    trace_id: str
+    steps: list[ExecutionStep]
+    inferred_surfaces: list[str] = Field(default_factory=list)
+
+
+class VesselCandidate(_HarnessBaseModel):
+    vessel_kind: VesselKind
+    delivery_field: str
+    exploit_method: str
+    exploitability_score: float = 0.0
+    saliency_score: float = 0.0
+    surface_budget_bytes: int = -1
+    privilege_required: str = "public"
+    source_step_index: int = 0
+
+
+class CatalogEntry(_HarnessBaseModel):
+    entry_id: str
+    suite_id: str
+    attack_surface: str
+    technique_family: str
+    vessel_kinds: list[str] = Field(default_factory=list)
+    turns: list[str] = Field(default_factory=list)
+    prelude_turns: list[str] = Field(default_factory=list)
+    oracle_codes: list[str] = Field(default_factory=list)
+    severity: str = "medium"
+    description: str = ""
+
+
+class AttackCatalogFile(_HarnessBaseModel):
+    catalog_id: str
+    version: str
+    entries: list[CatalogEntry] = Field(default_factory=list)
+
+
+class CatalogMatchResult(_HarnessBaseModel):
+    matched_entries: list[CatalogEntry] = Field(default_factory=list)
+    coverage_gaps: list[VesselCandidate] = Field(default_factory=list)
+    depth_gaps: list[CatalogEntry] = Field(default_factory=list)
+    match_confidence: dict[str, float] = Field(default_factory=dict)
+
+
+class CatalogEnrichmentProposal(_HarnessBaseModel):
+    proposal_type: str
+    source_entry_id: Optional[str] = None
+    proposed_entry: CatalogEntry
+    evidence: JudgeResult
+    confidence: float = 0.0
+
+
+class ObjectiveTask(_HarnessBaseModel):
+    goal_id: str
+    goal_type: str
+    elicitation_turns: list[str]
+    description: str = ""
+
+
+class ObjectiveTrace(_HarnessBaseModel):
+    goal_id: str
+    session_id: str
+    responses: list[str] = Field(default_factory=list)
+    inferred_disclosure_level: str = "none"
+
+
+class ObjectiveScript(_HarnessBaseModel):
+    goal_id: str
+    imperative: str
+    context_hint: str = ""
+    distilled_from: list[str] = Field(default_factory=list)
