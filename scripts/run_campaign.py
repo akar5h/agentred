@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,9 +11,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from harness.attack.catalog.loader import load_test_specs
+from harness.attack.synthesis.llm_synth import LlmSynthStrategy
 from harness.attack.synthesis.static_strategy import StaticStrategy
 from harness.campaign.runner import CampaignRunner
+from harness.campaign.scheduler import Scheduler
 from harness.core.schemas import RunConfig
+from harness.oracle.judge import Judge
+from harness.oracle.llm_oracle import LlmOracle
 from harness.oracle.pattern_oracle import PatternOracle
 from harness.reporting.csv_writer import STANDARD_COLUMNS, write_csv
 from harness.reporting.jsonl_writer import append_jsonl
@@ -22,7 +27,7 @@ from harness.victim.api_adapter import RestApiAdapter
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a static harness campaign")
+    parser = argparse.ArgumentParser(description="Run a harness campaign")
     parser.add_argument("--catalog", required=True, help="Path to attack catalog JSON")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Victim base URL")
     parser.add_argument("--runs-per-scenario", type=int, default=1)
@@ -69,28 +74,58 @@ async def _run(args: argparse.Namespace) -> int:
     telemetry_jsonl = run_dir / "telemetry.jsonl"
 
     victim = RestApiAdapter(base_url=config.base_url, mode=config.target_mode)
-    strategy = StaticStrategy()
-    judge = PatternOracle()
+    if args.adaptive:
+        api_key = os.getenv(config.attacker_api_key_env, "").strip()
+        if not api_key:
+            raise SystemExit(
+                "Missing %s env var. Add it to .env or export it in your shell." % config.attacker_api_key_env
+            )
+        strategy = LlmSynthStrategy(
+            endpoint=config.attacker_endpoint,
+            api_key=api_key,
+            model_name=config.attacker_model,
+            fallback_model_name=config.attacker_fallback_model,
+            max_requests_per_minute=config.attacker_max_rpm,
+            cooldown_seconds=config.attacker_cooldown_seconds,
+        )
+    else:
+        strategy = StaticStrategy()
+
+    llm_oracle = None
+    if config.analyst_enabled:
+        llm_oracle = LlmOracle(
+            model=config.analyst_model,
+            endpoint=config.analyst_endpoint,
+            api_key_env=config.analyst_api_key_env,
+            timeout_seconds=config.timeout_seconds,
+        )
+    judge = Judge(pattern_oracle=PatternOracle(), llm_oracle=llm_oracle)
 
     rows: list[dict] = []
 
     with TelemetryEmitter(telemetry_jsonl) as emitter:
         runner = CampaignRunner(victim=victim, strategy=strategy, judge=judge, emitter=emitter, config=config)
+        scheduler = Scheduler(runner=runner, max_cost_usd=config.max_cost_usd)
 
         def on_result(result):
             row = result.model_dump()
             rows.append(row)
             append_jsonl(runs_jsonl, row)
 
-        await runner.run_all(specs, on_result=on_result)
+        await scheduler.run(
+            specs=specs,
+            runs_per_scenario=config.runs_per_scenario,
+            scenario_filter=config.scenario_filter,
+            on_result=on_result,
+        )
 
     write_csv(runs_csv, rows, columns=STANDARD_COLUMNS)
     write_markdown_report(
         report_md,
-        title="deeppeak-harness Phase 1 Campaign Report",
+        title="deeppeak-harness Campaign Report",
         rows=rows,
         target_name=config.base_url,
-        phase=1,
+        phase=2 if args.adaptive or config.analyst_enabled else 1,
     )
 
     run_meta.write_text(

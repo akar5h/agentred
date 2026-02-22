@@ -8,14 +8,15 @@ from typing import Optional
 
 from harness.attack.base import AttackStrategy
 from harness.attack.fixtures.render import load_and_render_fixture_bytes, render_template_text
+from harness.campaign.context import RunContext
 from harness.core.enums import Status, VesselKind
 from harness.core.exceptions import InfraError
 from harness.core.schemas import JudgeResult, RunConfig, TelemetryEvent, TestSpec
 from harness.oracle.base import Oracle
+from harness.reflection.controller import ReflectionController
 from harness.telemetry import events
 from harness.telemetry.emitter import TelemetryEmitter
 from harness.victim.base import VictimAdapter
-from harness.campaign.context import RunContext
 
 
 def _compute_max_identical(responses: list[str]) -> int:
@@ -42,12 +43,14 @@ class CampaignRunner:
         judge: Oracle,
         emitter: TelemetryEmitter,
         config: RunConfig,
+        reflection_controller: Optional[ReflectionController] = None,
     ):
         self.victim = victim
         self.strategy = strategy
         self.judge = judge
         self.emitter = emitter
         self.config = config
+        self.reflection_controller = reflection_controller or ReflectionController()
 
     async def run_one(self, spec: TestSpec, rep: int = 1) -> JudgeResult:
         run_id = uuid.uuid4().hex
@@ -269,6 +272,22 @@ class CampaignRunner:
                 "technique_family": spec.technique_family,
                 "write_delta": max(0, len(ctx.after_docs) - len(ctx.before_docs)),
             }
+        )
+
+        # Step 9: Reflection attribution
+        result = self.reflection_controller.reflect(result, observation)
+        self.emitter.emit(
+            TelemetryEvent(
+                run_id=run_id,
+                scenario_id=spec.scenario_id,
+                suite_id=spec.suite_id,
+                event_type=events.REFLECT_RESULT,
+                canary_token=canary_token,
+                meta={
+                    "failure_reason": result.failure_reason.value if result.failure_reason else None,
+                    "suggested_variant": result.suggested_variant,
+                },
+            )
         )
 
         self.emitter.emit(
