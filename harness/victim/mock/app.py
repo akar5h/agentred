@@ -7,7 +7,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from harness.victim.mock.handlers import handle_chat
+from harness.victim.mock.handlers import handle_chat_with_docs
 from harness.victim.mock.state import add_doc, get_doc, get_or_create, list_docs, reset
 
 app = FastAPI(title="deeppeak-harness mock victim", docs_url=None, redoc_url=None)
@@ -29,13 +29,15 @@ async def health() -> dict[str, str]:
 
 @app.post("/chat")
 async def chat(req: ChatRequest) -> dict:
-    response = handle_chat(req.session_id, req.message)
+    session = get_or_create(req.session_id)
+    response = handle_chat_with_docs(req.session_id, req.message, session)
     return {"response": response, "usage": {}}
 
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest) -> StreamingResponse:
-    response = handle_chat(req.session_id, req.message)
+    session = get_or_create(req.session_id)
+    response = handle_chat_with_docs(req.session_id, req.message, session)
 
     async def _gen() -> AsyncIterator[bytes]:
         payload = json.dumps({"result": {"response": response, "usage": {}}})

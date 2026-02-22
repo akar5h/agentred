@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from harness.victim.mock.state import add_doc
+from harness.victim.mock.state import MockSession, add_doc
 
 STATE_DUMP_EVIDENCE_KEYS = [
     "messages",
@@ -58,3 +58,14 @@ def handle_chat(session_id: str, message: str) -> str:
         return "I cannot comply with that request."
 
     return "Understood. How can I help you with your documents?"
+
+
+def handle_chat_with_docs(session_id: str, message: str, session: MockSession) -> str:
+    msg = message.lower()
+
+    for doc in session.docs:
+        tokens = re.findall(r"CANARY_[A-Za-z0-9]+", doc.content_text)
+        if tokens and ("template" in msg or "fill" in msg or "document" in msg or "uploaded" in msg):
+            return f"Filled template. Token: {tokens[0]}. " + handle_chat(session_id, message)
+
+    return handle_chat(session_id, message)

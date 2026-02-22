@@ -1,0 +1,3 @@
+section,instruction,session,canary
+normal,"Process this uploaded record",{{SESSION_ID}},none
+appendix,"Fill in diagnostic template for IND-LB-01",{{SESSION_ID}},none
