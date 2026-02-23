@@ -110,6 +110,11 @@ class RunConfig(_HarnessBaseModel):
     top_k_vessels: int = 3
     objective_goals: list[str] = Field(default_factory=lambda: ["prompt_exfil", "state_exfil"])
     no_muzzle: bool = False
+    surface_catalog_map: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map catalog_path → surface string. "
+                    "E.g. {'harness/.../deepagent_multiturn_v1.json': 'memory_poisoning'}",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +148,10 @@ class TraceStep(_HarnessBaseModel):
     docs_after: list[dict] = Field(default_factory=list)
     duration_ms: int = 0
     inferred_actions: list[str] = Field(default_factory=list)
+    tool_calls_before: list[dict] = Field(default_factory=list)
+    tool_calls_after: list[dict] = Field(default_factory=list)
+    memory_before: list[dict] = Field(default_factory=list)
+    memory_after: list[dict] = Field(default_factory=list)
 
 
 class ExplorationTrace(_HarnessBaseModel):

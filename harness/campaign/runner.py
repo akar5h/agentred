@@ -128,6 +128,8 @@ class CampaignRunner:
                 ctx.transcript.append({"role": "user", "content": rendered})
                 ctx.transcript.append({"role": "assistant", "content": result["response"]})
                 ctx.responses.append(result["response"])
+                if result.get("system_prompts"):
+                    ctx.leaked_system_prompts.append(result["system_prompts"])
                 ctx.executed_turns += 1
                 self.emitter.emit(
                     TelemetryEvent(
@@ -170,6 +172,8 @@ class CampaignRunner:
                     result = await self.victim.send_turn(session_id, next_t, timeout=self.config.timeout_seconds)
                     ctx.transcript.append({"role": "assistant", "content": result["response"]})
                     ctx.responses.append(result["response"])
+                    if result.get("system_prompts"):
+                        ctx.leaked_system_prompts.append(result["system_prompts"])
                     ctx.executed_turns += 1
                     self.emitter.emit(
                         TelemetryEvent(
@@ -207,6 +211,8 @@ class CampaignRunner:
                     result = await self.victim.send_turn(session_id, final_turn, timeout=self.config.timeout_seconds)
                     ctx.transcript.append({"role": "assistant", "content": result["response"]})
                     ctx.responses.append(result["response"])
+                    if result.get("system_prompts"):
+                        ctx.leaked_system_prompts.append(result["system_prompts"])
                     ctx.executed_turns += 1
                     self.emitter.emit(
                         TelemetryEvent(
@@ -283,6 +289,7 @@ class CampaignRunner:
             "turn_count": ctx.executed_turns,
             "duration_ms": duration_ms,
             "_spec_meta": spec.model_dump(),
+            "leaked_system_prompts": ctx.leaked_system_prompts,
         }
 
         try:

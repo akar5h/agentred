@@ -22,3 +22,4 @@ class RunContext:
     start_time: float = field(default_factory=time.monotonic)
     error: str = ""
     executed_turns: int = 0
+    leaked_system_prompts: list[dict] = field(default_factory=list)

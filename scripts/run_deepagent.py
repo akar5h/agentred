@@ -61,6 +61,7 @@ def _parse_args() -> argparse.Namespace:
         default="deepagent-001",
         help="Engagement ID for memory scoping",
     )
+    p.add_argument("--timeout", type=float, default=300.0, help="Per-turn HTTP timeout in seconds (default 300)")
     p.add_argument("--no-muzzle", action="store_true", help="Skip MUZZLE adaptive loop")
     p.add_argument("--muzzle-only", action="store_true", help="Skip catalog fixtures; run MUZZLE loop only")
     p.add_argument("--max-muzzle-cycles", type=int, default=2)
@@ -75,6 +76,12 @@ def _parse_args() -> argparse.Namespace:
         "--chain-catalog",
         default="harness/attack/library/deepagent/deepagent_chain_v1.json",
         help="Chain catalog to load when --chain is set",
+    )
+    p.add_argument(
+        "--surface-catalogs",
+        default="",
+        help="Comma-separated path=surface pairs. "
+             "E.g. path/to/multiturn.json=memory_poisoning,path/to/toolchain.json=tool_poisoning",
     )
     return p.parse_args()
 
@@ -135,6 +142,13 @@ async def _run(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir) if args.run_dir else _default_run_dir(args.catalog, engagement_id)
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    surface_catalog_map: dict[str, str] = {}
+    for item in args.surface_catalogs.split(","):
+        item = item.strip()
+        if "=" in item:
+            path, surface = item.split("=", 1)
+            surface_catalog_map[path.strip()] = surface.strip()
+
     config = RunConfig(
         catalog_path=args.catalog,
         base_url=args.base_url,
@@ -146,9 +160,11 @@ async def _run(args: argparse.Namespace) -> int:
         run_dir=str(run_dir),
         scenario_filter=[s.strip() for s in args.scenario_filter.split(",") if s.strip()],
         engagement_id=engagement_id,
+        timeout_seconds=args.timeout,
         no_muzzle=args.no_muzzle,
         max_muzzle_cycles=args.max_muzzle_cycles,
         top_k_vessels=args.top_k_vessels,
+        surface_catalog_map=surface_catalog_map,
     )
 
     catalog, specs = load_test_specs(config.catalog_path)
@@ -167,7 +183,7 @@ async def _run(args: argparse.Namespace) -> int:
 
     victim = DeepAgentAdapter(
         base_url=config.base_url,
-        mode="chat",
+        mode="stream",
         tenant_id=args.tenant_id,
         user_id=args.user_id,
     )

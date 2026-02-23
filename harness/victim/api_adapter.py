@@ -98,15 +98,18 @@ class RestApiAdapter(VictimAdapter):
             parsed = _parse_sse_done_body(resp.text)
             response_text = str(parsed.get("response", ""))
             usage = parsed.get("usage", {})
+            system_prompts = parsed.get("system_prompts", {})
         else:
             payload = resp.json() if resp.content else {}
             response_text = str(payload.get("response", ""))
             usage = payload.get("usage", {})
+            system_prompts = payload.get("system_prompts", {})
 
         return {
             "response": response_text,
             "usage": usage if isinstance(usage, dict) else {},
             "duration_ms": int((time.monotonic() - started) * 1000),
+            "system_prompts": system_prompts if isinstance(system_prompts, dict) else {},
         }
 
     async def upload_file(

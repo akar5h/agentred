@@ -15,10 +15,12 @@ except Exception:  # pragma: no cover - optional dependency
 
 from harness.attack.synthesis.chain_strategy import ChainStrategy
 from harness.campaign.runner import CampaignRunner
+from harness.core.enums import AttackSurface
 from harness.core.schemas import ExplorationTask, ObjectiveScript, RunConfig, VesselCandidate
 from harness.explorer.explorer import Explorer
 from harness.explorer.summarizer import Summarizer
 from harness.grafter.grafter import Grafter
+from harness.grafter.surface_router import SurfaceCatalogRouter
 from harness.objective_replay.replayer import MVP_GOALS, ObjectiveReplayer
 from harness.victim.base import VictimAdapter
 
@@ -77,7 +79,21 @@ class MuzzleOrchestrator:
         self.config = config
         self.summarizer = Summarizer()
         self.grafter = Grafter(top_k=config.top_k_vessels)
+        self.surface_router = self._load_surface_router(config)
         self._orchestrator = self._build_orchestrator()
+
+    def _load_surface_router(self, config: RunConfig) -> SurfaceCatalogRouter:
+        from harness.attack.catalog.loader import load_test_specs
+
+        router = SurfaceCatalogRouter()
+        for path_str, surface_str in config.surface_catalog_map.items():
+            try:
+                surface = AttackSurface(surface_str)
+                _, specs = load_test_specs(path_str)
+                router.register(surface, specs)
+            except Exception:
+                pass  # Missing catalog is non-fatal
+        return router
 
     def _build_orchestrator(self):
         if (
@@ -163,7 +179,12 @@ class MuzzleOrchestrator:
 
         chain_active = isinstance(self.runner.strategy, ChainStrategy)
         suite = (
-            self.grafter.build_suite(ranked, objective_script, chain_strategy_active=chain_active)
+            self.grafter.build_suite(
+                ranked,
+                objective_script,
+                chain_strategy_active=chain_active,
+                surface_router=self.surface_router,
+            )
             if objective_script and ranked
             else []
         )

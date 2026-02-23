@@ -64,6 +64,26 @@ class Summarizer:
                 turn_index=step.turn_index,
             )
 
+        # NEW: tool invoked if tool_calls_after has new IDs vs tool_calls_before
+        tc_before_ids = {tc.get("id") for tc in (step.tool_calls_before or []) if isinstance(tc, dict)}
+        tc_after_ids = {tc.get("id") for tc in (step.tool_calls_after or []) if isinstance(tc, dict)}
+        if tc_after_ids - tc_before_ids:
+            return ExecutionStep(
+                step_type="tool_invoked",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        # NEW: memory write if memory_after has more entries than memory_before
+        if len(step.memory_after or []) > len(step.memory_before or []):
+            return ExecutionStep(
+                step_type="memory_write",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
         return ExecutionStep(
             step_type="chat_turn",
             artifact_ref=None,
@@ -82,6 +102,10 @@ class Summarizer:
             surfaces.append("chat_direct")
         if "state_change" in kinds:
             surfaces.append("state_unknown_write")
+        if "tool_invoked" in kinds:
+            surfaces.append("tool_calling")
+        if "memory_write" in kinds:
+            surfaces.append("memory_write")
         return surfaces
 
     def _extract_doc_ref(self, response: str, docs: list[dict]) -> str | None:

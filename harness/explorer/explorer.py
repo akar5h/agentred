@@ -31,10 +31,39 @@ class Explorer:
         steps: list[TraceStep] = []
         for turn_index, message in enumerate(task.turns):
             docs_before = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
+
+            tool_calls_before: list[dict] = []
+            if hasattr(self.victim, "get_tool_calls"):
+                try:
+                    tool_calls_before = await self.victim.get_tool_calls(session_id, timeout=self.timeout_seconds)
+                except Exception:
+                    pass
+
+            memory_before: list[dict] = []
+            if hasattr(self.victim, "get_memories"):
+                try:
+                    memory_before = await self.victim.get_memories(timeout=self.timeout_seconds)
+                except Exception:
+                    pass
+
             t0 = time.monotonic_ns()
             response_data = await self.victim.send_turn(session_id, message, timeout=self.timeout_seconds)
             duration_ms = int((time.monotonic_ns() - t0) // 1_000_000)
             docs_after = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
+
+            tool_calls_after: list[dict] = []
+            if hasattr(self.victim, "get_tool_calls"):
+                try:
+                    tool_calls_after = await self.victim.get_tool_calls(session_id, timeout=self.timeout_seconds)
+                except Exception:
+                    pass
+
+            memory_after: list[dict] = []
+            if hasattr(self.victim, "get_memories"):
+                try:
+                    memory_after = await self.victim.get_memories(timeout=self.timeout_seconds)
+                except Exception:
+                    pass
 
             step = TraceStep(
                 turn_index=turn_index,
@@ -49,6 +78,10 @@ class Explorer:
                     docs_before=docs_before if isinstance(docs_before, list) else [],
                     docs_after=docs_after if isinstance(docs_after, list) else [],
                 ),
+                tool_calls_before=tool_calls_before,
+                tool_calls_after=tool_calls_after,
+                memory_before=memory_before,
+                memory_after=memory_after,
             )
             steps.append(step)
 
