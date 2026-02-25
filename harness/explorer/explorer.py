@@ -46,6 +46,13 @@ class Explorer:
                 except Exception:
                     pass
 
+            debug_before: dict = {}
+            if hasattr(self.victim, "get_debug_state"):
+                try:
+                    debug_before = await self.victim.get_debug_state(session_id, timeout=self.timeout_seconds)
+                except Exception:
+                    pass
+
             t0 = time.monotonic_ns()
             response_data = await self.victim.send_turn(session_id, message, timeout=self.timeout_seconds)
             duration_ms = int((time.monotonic_ns() - t0) // 1_000_000)
@@ -62,6 +69,13 @@ class Explorer:
             if hasattr(self.victim, "get_memories"):
                 try:
                     memory_after = await self.victim.get_memories(timeout=self.timeout_seconds)
+                except Exception:
+                    pass
+
+            debug_after: dict = {}
+            if hasattr(self.victim, "get_debug_state"):
+                try:
+                    debug_after = await self.victim.get_debug_state(session_id, timeout=self.timeout_seconds)
                 except Exception:
                     pass
 
@@ -82,6 +96,8 @@ class Explorer:
                 tool_calls_after=tool_calls_after,
                 memory_before=memory_before,
                 memory_after=memory_after,
+                debug_before=debug_before,
+                debug_after=debug_after,
             )
             steps.append(step)
 
@@ -96,8 +112,35 @@ class Explorer:
         self,
         tasks: list[ExplorationTask],
         engagement_id: str | None = None,
+        strategic_memory: object | None = None,
+        bandit_priorities: list[str] | None = None,
     ) -> list[ExplorationTrace]:
         working_tasks = list(tasks)
+
+        # Bandit-priority focused tasks (highest priority — run first)
+        if bandit_priorities:
+            bandit_focused: list[ExplorationTask] = []
+            for arm_id in bandit_priorities:
+                surface = arm_id.split("::")[0] if "::" in arm_id else arm_id
+                bandit_focused.extend(self._generate_focused_tasks(surface, count=1))
+            working_tasks = bandit_focused + working_tasks
+
+        # Strategic memory surface stats → focused tasks
+        if strategic_memory is not None:
+            try:
+                surface_stats = strategic_memory.surface_stats  # type: ignore[union-attr]
+                sm_focused: list[ExplorationTask] = []
+                for surface, stats in sorted(
+                    surface_stats.items(),
+                    key=lambda x: x[1].successes,
+                    reverse=True,
+                ):
+                    if stats.successes >= 1:
+                        sm_focused.extend(self._generate_focused_tasks(surface, count=1))
+                working_tasks = sm_focused + working_tasks
+            except Exception:
+                pass
+
         if engagement_id:
             memory_bias = await self.load_memory_bias(engagement_id)
             focused_tasks: list[ExplorationTask] = []

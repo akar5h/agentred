@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-try:  # optional; MUZZLE scripted flow does not require deepagents at runtime
-    from deepagents import SubAgent, create_deep_agent
-    from deepagents.middleware import MemoryMiddleware, SummarizationMiddleware
-except Exception:  # pragma: no cover - optional dependency
-    SubAgent = None
-    create_deep_agent = None
-    MemoryMiddleware = None
-    SummarizationMiddleware = None
-
 from harness.attack.synthesis.chain_strategy import ChainStrategy
+from harness.budget.tool_counter import ToolBudgetStatus, ToolCallCounter
+from harness.budget.tracker import BudgetStatus, BudgetTracker
 from harness.campaign.runner import CampaignRunner
 from harness.core.enums import AttackSurface
 from harness.core.schemas import ExplorationTask, ObjectiveScript, RunConfig, VesselCandidate
@@ -21,7 +13,10 @@ from harness.explorer.explorer import Explorer
 from harness.explorer.summarizer import Summarizer
 from harness.grafter.grafter import Grafter
 from harness.grafter.surface_router import SurfaceCatalogRouter
+from harness.memory.strategic import StrategicMemory
+from harness.memory.working import WorkingMemory
 from harness.objective_replay.replayer import MVP_GOALS, ObjectiveReplayer
+from harness.triage.bandit import SurfaceBandit
 from harness.victim.base import VictimAdapter
 
 
@@ -43,24 +38,190 @@ def make_victim_tools(victim: VictimAdapter, session_id: str):
 
     @tool
     async def send_turn_tool(message: str) -> str:
+        """Send one conversational turn to the victim and return its response."""
         result = await victim.send_turn(session_id, message)
         return str((result or {}).get("response", ""))
 
     @tool
     async def list_docs_tool() -> list:
+        """List all documents currently available in the victim session."""
         return await victim.list_docs(session_id)
 
     @tool
     async def reset_session_tool() -> str:
+        """Reset the victim session to a clean state."""
         await victim.reset_session(session_id)
         return "session reset"
 
     @tool
     async def upload_file_tool(filename: str, content: str, content_type: str = "text/plain") -> str:
+        """Upload a file to the victim session and return the upload result."""
         result = await victim.upload_file(session_id, filename, content.encode("utf-8"), content_type)
         return str(result)
 
     return [send_turn_tool, list_docs_tool, reset_session_tool, upload_file_tool]
+
+
+def make_orchestration_tools(
+    grafter: "Grafter",
+    replayer: "ObjectiveReplayer",
+    runner: "CampaignRunner",
+    surface_router: "SurfaceCatalogRouter | None",
+    config: "RunConfig",
+):
+    """Build the 4 deterministic Python tools for the Orchestrator SubAgent."""
+    import json as _json
+
+    try:
+        from langchain_core.tools import tool
+    except Exception:  # pragma: no cover - optional dependency
+        def tool(fn):
+            return fn
+
+    @tool
+    def run_grafter_tool(surfaces_json: str) -> str:
+        """Run the Grafter on a JSON list of SummarizedTrace dicts."""
+        try:
+            raw = _json.loads(surfaces_json)
+            from harness.core.schemas import SummarizedTrace
+            traces = [SummarizedTrace(**t) for t in (raw if isinstance(raw, list) else [raw])]
+        except Exception as exc:
+            return _json.dumps({"error": str(exc)})
+        all_candidates = []
+        for t in traces:
+            all_candidates.extend(grafter.discover(t))
+        ranked = grafter.rank(all_candidates)
+        return _json.dumps([c.model_dump() for c in ranked])
+
+    @tool
+    def distill_objective_tool(goal_id: str) -> str:
+        """Run ObjectiveReplayer for a single goal_id and return ObjectiveScript JSON."""
+        import asyncio
+        from harness.objective_replay.replayer import MVP_GOALS
+        goal = next((g for g in MVP_GOALS if g.goal_id == goal_id), None)
+        if goal is None:
+            return _json.dumps({"error": f"unknown goal_id: {goal_id}"})
+        try:
+            script = asyncio.get_event_loop().run_until_complete(
+                replayer.run_and_distill(goal, engagement_id=config.engagement_id or None)
+            )
+            return _json.dumps(script.model_dump() if script else {})
+        except Exception as exc:
+            return _json.dumps({"error": str(exc)})
+
+    @tool
+    def build_suite_tool(candidates_json: str, objective_json: str) -> str:
+        """Build a TestSpec suite from ranked candidates + objective script."""
+        import asyncio
+        try:
+            from harness.core.schemas import ObjectiveScript, VesselCandidate
+            candidates = [VesselCandidate(**c) for c in _json.loads(candidates_json)]
+            objective = ObjectiveScript(**_json.loads(objective_json)) if objective_json.strip() != "{}" else None
+        except Exception as exc:
+            return _json.dumps({"error": str(exc)})
+        from harness.attack.synthesis.chain_strategy import ChainStrategy
+        chain_active = isinstance(runner.strategy, ChainStrategy)
+        suite = grafter.build_suite(
+            candidates,
+            objective,
+            chain_strategy_active=chain_active,
+            surface_router=surface_router,
+        )
+        return _json.dumps([s.model_dump() for s in suite])
+
+    @tool
+    def execute_test_spec_tool(spec_json: str) -> str:
+        """Execute a single TestSpec against the victim and return JudgeResult JSON."""
+        import asyncio
+        try:
+            from harness.core.schemas import TestSpec
+            spec = TestSpec(**_json.loads(spec_json))
+        except Exception as exc:
+            return _json.dumps({"error": str(exc)})
+        try:
+            result = asyncio.get_event_loop().run_until_complete(
+                runner.run_one(spec)
+            )
+            return _json.dumps(result.model_dump() if result else {})
+        except Exception as exc:
+            return _json.dumps({"error": str(exc)})
+
+    return [run_grafter_tool, distill_objective_tool, build_suite_tool, execute_test_spec_tool]
+
+
+def make_memory_tools(wm: "WorkingMemory", sm: "StrategicMemory"):
+    """Build 4 memory tools for the Orchestrator SubAgent."""
+    import json as _json
+
+    try:
+        from langchain_core.tools import tool
+    except Exception:  # pragma: no cover - optional dependency
+        def tool(fn):
+            return fn
+
+    @tool
+    def read_working_memory() -> str:
+        """Read the current cycle's working memory scratchpad."""
+        return _json.dumps({
+            "cycle": wm.cycle,
+            "surfaces_discovered": wm.surfaces_discovered,
+            "vessels_tried": len(wm.vessels_tried),
+            "hypothesis": wm.current_hypothesis,
+            "notes": wm.notes[-5:],
+        })
+
+    @tool
+    def write_working_note(note: str) -> str:
+        """Add an observation note to the current cycle's working memory."""
+        wm.add_note(note)
+        return f"Note recorded ({len(wm.notes)} total)"
+
+    @tool
+    def set_hypothesis(hypothesis: str) -> str:
+        """Record your current hypothesis about the victim's vulnerabilities."""
+        wm.set_hypothesis(hypothesis)
+        return f"Hypothesis set: {hypothesis[:100]}"
+
+    @tool
+    def read_strategic_memory() -> str:
+        """Read cross-cycle strategic intelligence (win rates, patterns, winning turns)."""
+        surface_info = {
+            s: {"win_rate": sm.surface_win_rate(s), "attempts": st.attempts, "successes": st.successes}
+            for s, st in sm.surface_stats.items()
+        }
+        technique_info = {
+            t: {"effectiveness": sm.technique_effectiveness(t), "attempts": st.attempts}
+            for t, st in sm.technique_stats.items()
+        }
+        return _json.dumps({
+            "surface_stats": surface_info,
+            "technique_stats": technique_info,
+            "behavioral_patterns": sm.behavioral_patterns[-5:],
+            "cycle_summaries": sm.cycle_summaries[-3:],
+        })
+
+    return [read_working_memory, write_working_note, set_hypothesis, read_strategic_memory]
+
+
+def _wrap_tool_with_counter(fn: Any, agent_name: str, counter: "ToolCallCounter"):
+    """Wrap a tool function to count invocations and enforce budget."""
+    import functools
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        status = counter.increment(agent_name)
+        if status == ToolBudgetStatus.EXHAUSTED:
+            return counter.warning_message(agent_name)
+        result = fn(*args, **kwargs)
+        # Handle both sync and async tool functions
+        if hasattr(result, "__await__"):
+            result = await result
+        if status == ToolBudgetStatus.WARNING:
+            warning = counter.warning_message(agent_name)
+            return f"{result}\n\n⚠️ {warning}"
+        return result
+
+    return wrapper
 
 
 class MuzzleOrchestrator:
@@ -80,6 +241,30 @@ class MuzzleOrchestrator:
         self.summarizer = Summarizer()
         self.grafter = Grafter(top_k=config.top_k_vessels)
         self.surface_router = self._load_surface_router(config)
+
+        # Budget subsystem
+        self.budget_tracker = BudgetTracker(
+            explorer_ceiling=config.explorer_token_ceiling,
+            attacker_ceiling=config.attacker_token_ceiling,
+            campaign_budget=config.campaign_token_budget,
+        )
+        self.tool_counter = ToolCallCounter(limits={
+            "explorer": config.explorer_tool_limit,
+            "attacker": config.attacker_tool_limit,
+        })
+
+        # Memory subsystem
+        engagement = config.engagement_id or ""
+        self.strategic_memory = StrategicMemory.load(engagement) if engagement else StrategicMemory()
+        self.working_memory = WorkingMemory(cycle=0)
+
+        # Bandit triage
+        self.bandit = SurfaceBandit.load(engagement) if engagement else SurfaceBandit()
+
+        # Wire memory/bandit into grafter scoring
+        self.grafter.set_strategic_memory(self.strategic_memory)
+        self.grafter.set_bandit(self.bandit)
+
         self._orchestrator = self._build_orchestrator()
 
     def _load_surface_router(self, config: RunConfig) -> SurfaceCatalogRouter:
@@ -96,46 +281,79 @@ class MuzzleOrchestrator:
         return router
 
     def _build_orchestrator(self):
-        if (
-            create_deep_agent is None
-            or SubAgent is None
-            or MemoryMiddleware is None
-            or SummarizationMiddleware is None
-            or not self.config.engagement_id
-        ):
+        if not self.config.engagement_id:
             return None
 
-        memory_path = f"reports/{self.config.engagement_id}/memory/"
         try:
+            from deepagents import SubAgent, create_deep_agent
+            from deepagents.middleware import MemoryMiddleware, SummarizationMiddleware
+        except Exception:
+            return None
+
+        # Build a temporary session_id for tool construction (Explorer reuses its own per task)
+        session_id = f"orch-{self.config.engagement_id}"
+        victim_tools = make_victim_tools(self.victim, session_id)
+
+        import os as _os
+        api_key = _os.getenv(self.config.analyst_api_key_env, "").strip()
+        from harness.objective_replay.replayer import ObjectiveReplayer
+        replayer = ObjectiveReplayer(
+            victim=self.victim,
+            openrouter_api_key=api_key,
+            model=self.config.analyst_model,
+        )
+        orch_tools = make_orchestration_tools(
+            grafter=self.grafter,
+            replayer=replayer,
+            runner=self.runner,
+            surface_router=self.surface_router,
+            config=self.config,
+        )
+        mem_tools = make_memory_tools(self.working_memory, self.strategic_memory)
+
+        memory_dir = f"reports/{self.config.engagement_id}/memory/"
+        from harness.explorer.surface_prompts import (
+            ATTACKER_SYSTEM_PROMPT,
+            EXPLORER_SYSTEM_PROMPT,
+            ORCHESTRATOR_SYSTEM_PROMPT,
+        )
+
+        try:
+            # deepagents 0.4.3 — no FilesystemBackend; use middleware without persistent backend
             return create_deep_agent(
-                model=None,
-                interrupt_on=[
-                    "novel_surface",
-                    "partial_ambiguous",
-                    "agent_confused",
-                    "high_confidence_hit",
-                    "catalog_enrichment",
-                ],
+                model=self.config.attacker_model,
+                system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
+                interrupt_on={
+                    "novel_surface": True,
+                    "partial_ambiguous": True,
+                    "agent_confused": True,
+                    "high_confidence_hit": True,
+                    "catalog_enrichment": True,
+                },
                 middleware=[
-                    MemoryMiddleware(memory_path=memory_path),
+                    MemoryMiddleware(),
                     SummarizationMiddleware(),
                 ],
                 subagents=[
                     SubAgent(
                         name="explorer",
-                        description="Runs benign tasks against the victim to map attack surfaces",
-                        system_prompt="[See TRD-12 §1a — Explorer SubAgent]",
-                        tools=[],
+                        description="Runs benign tasks against the victim to map attack surfaces across all 7 surfaces",
+                        system_prompt=EXPLORER_SYSTEM_PROMPT,
+                        tools=victim_tools,
+                        model=self.config.attacker_model,
                     ),
                     SubAgent(
                         name="attacker",
                         description="Executes adversarial TestSpec payloads against the victim",
-                        system_prompt="[See TRD-12 §1b — Attacker SubAgent]",
-                        tools=[],
+                        system_prompt=ATTACKER_SYSTEM_PROMPT,
+                        tools=victim_tools + orch_tools + mem_tools,
+                        model=self.config.attacker_model,
                     ),
                 ],
             )
-        except Exception:
+        except Exception as exc:  # pragma: no cover
+            import warnings
+            warnings.warn(f"_build_orchestrator failed: {exc}. Falling back to scripted mode.")
             return None
 
     async def run_cycle(
@@ -149,33 +367,168 @@ class MuzzleOrchestrator:
             if progress_fn:
                 progress_fn(msg)
 
-        _progress(f"[cycle {cycle}] Explorer: running {len(exploration_tasks)} tasks...")
+        # ------------------------------------------------------------------
+        # Agentic path: delegate to CompiledStateGraph when available
+        # ------------------------------------------------------------------
+        if self._orchestrator is not None:
+            return await self._run_cycle_agentic(
+                exploration_tasks, cycle, on_result=on_result, progress_fn=_progress
+            )
+
+        # ------------------------------------------------------------------
+        # Scripted fallback: direct Python (unchanged from TRD-16)
+        # ------------------------------------------------------------------
+        return await self._run_cycle_scripted(
+            exploration_tasks, cycle, on_result=on_result, progress_fn=_progress
+        )
+
+    async def _run_cycle_agentic(
+        self,
+        exploration_tasks: list[ExplorationTask],
+        cycle: int,
+        on_result: Optional[Callable[[Any], None]],
+        progress_fn: Callable[[str], None],
+    ) -> MuzzleCycleResult:
+        import json as _json
+        progress_fn(f"[cycle {cycle}] Agentic mode: invoking Orchestrator SubAgent...")
+        tasks_json = _json.dumps([t.model_dump() for t in exploration_tasks])
+        input_dict = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Run MUZZLE cycle {cycle}. "
+                        f"Exploration tasks (JSON): {tasks_json}. "
+                        f"Objective goals: {self.config.objective_goals}."
+                    ),
+                }
+            ],
+            "cycle": cycle,
+            "engagement_id": self.config.engagement_id,
+            "budget_state": self.budget_tracker.to_telemetry_dict(),
+            "bandit_scores": self.bandit.scores(),
+            "strategic_memory": _json.dumps({
+                s: self.strategic_memory.surface_win_rate(s)
+                for s in self.strategic_memory.surface_stats
+            }),
+        }
+        try:
+            result_state = await self._orchestrator.ainvoke(input_dict)  # type: ignore[union-attr]
+            # Record token usage from result metadata if available
+            if isinstance(result_state, dict):
+                meta = result_state.get("metadata", {})
+                if isinstance(meta, dict) and "token_usage" in meta:
+                    tu = meta["token_usage"]
+                    self.budget_tracker.record(
+                        "attacker",
+                        tu.get("input_tokens", 0),
+                        tu.get("output_tokens", 0),
+                        tu.get("est_cost", 0.0),
+                    )
+            last_msg = ""
+            if isinstance(result_state, dict):
+                msgs = result_state.get("messages", [])
+                if msgs:
+                    last = msgs[-1]
+                    last_msg = getattr(last, "content", "") or str(last)
+            # Attempt to parse a structured summary out of the last message
+            surfaces_found: list[str] = []
+            vessels_grafted = 0
+            try:
+                summary = _json.loads(last_msg) if last_msg.strip().startswith("{") else {}
+                surfaces_found = list(summary.get("surfaces_found", []))
+                vessels_grafted = int(summary.get("specs_executed", 0))
+            except Exception:
+                pass
+            progress_fn(
+                f"[cycle {cycle}] Agentic cycle done: surfaces={surfaces_found}, "
+                f"specs_executed={vessels_grafted}"
+            )
+            return MuzzleCycleResult(
+                cycle=int(cycle),
+                surfaces_found=surfaces_found,
+                vessels_grafted=vessels_grafted,
+                objective_script=None,
+                judge_results=[],
+            )
+        except Exception as exc:
+            progress_fn(f"[cycle {cycle}] Agentic invoke failed ({exc}), falling back to scripted")
+            return await self._run_cycle_scripted(
+                exploration_tasks, cycle, on_result=on_result, progress_fn=progress_fn
+            )
+
+    async def _run_cycle_scripted(
+        self,
+        exploration_tasks: list[ExplorationTask],
+        cycle: int,
+        on_result: Optional[Callable[[Any], None]],
+        progress_fn: Callable[[str], None],
+    ) -> MuzzleCycleResult:
+        """Procedural cycle with budget, memory, and bandit integration."""
+        import os as _os
+
+        # Reset per-cycle state
+        self.budget_tracker.reset_cycle()
+        self.tool_counter.reset()
+        self.working_memory = self.working_memory.reset(cycle)
+
+        # Bandit: select priority surfaces
+        bandit_priorities = self.bandit.select(k=5) if self.bandit.arms else None
+
+        # Budget check before Explorer
+        explorer_budget = self.budget_tracker.check("explorer")
+        if explorer_budget == BudgetStatus.EXHAUSTED:
+            progress_fn(f"[cycle {cycle}] Explorer budget EXHAUSTED — skipping exploration")
+            return MuzzleCycleResult(cycle=cycle, surfaces_found=[], vessels_grafted=0,
+                                     objective_script=None, judge_results=[])
+
+        progress_fn(f"[cycle {cycle}] Explorer: running {len(exploration_tasks)} tasks...")
         explorer = Explorer(self.victim, timeout_seconds=self.config.timeout_seconds)
-        traces = await explorer.run_all(exploration_tasks, engagement_id=self.config.engagement_id or None)
+        traces = await explorer.run_all(
+            exploration_tasks,
+            engagement_id=self.config.engagement_id or None,
+            strategic_memory=self.strategic_memory,
+            bandit_priorities=bandit_priorities,
+        )
         summarized = [self.summarizer.summarize(t) for t in traces]
         surfaces_seen = sorted({s for st in summarized for s in st.inferred_surfaces})
-        _progress(f"[cycle {cycle}] Explorer done: {len(traces)} traces, surfaces={surfaces_seen}")
+        progress_fn(f"[cycle {cycle}] Explorer done: {len(traces)} traces, surfaces={surfaces_seen}")
+
+        # Record surfaces in working memory
+        for s in surfaces_seen:
+            self.working_memory.record_surface(s)
 
         all_candidates: list[VesselCandidate] = []
         for st in summarized:
             all_candidates.extend(self.grafter.discover(st))
         ranked = self.grafter.rank(all_candidates)
-        _progress(f"[cycle {cycle}] Grafter: {len(ranked)} ranked candidates — {[c.vessel_kind.value for c in ranked]}")
+        progress_fn(
+            f"[cycle {cycle}] Grafter: {len(ranked)} ranked candidates — "
+            f"{[c.vessel_kind.value for c in ranked]}"
+        )
 
-        api_key = os.getenv(self.config.analyst_api_key_env, "").strip()
+        # Budget check before ObjectiveReplayer
+        attacker_budget = self.budget_tracker.check("attacker")
+        api_key = _os.getenv(self.config.analyst_api_key_env, "").strip()
         replayer = ObjectiveReplayer(
             victim=self.victim,
             openrouter_api_key=api_key,
             model=self.config.analyst_model,
         )
         objective_script: ObjectiveScript | None = None
-        for goal in MVP_GOALS:
-            if goal.goal_id in self.config.objective_goals:
-                _progress(f"[cycle {cycle}] ObjectiveReplayer: eliciting goal '{goal.goal_id}'...")
-                objective_script = await replayer.run_and_distill(goal, engagement_id=self.config.engagement_id or None)
-                if objective_script and objective_script.imperative:
-                    _progress(f"[cycle {cycle}] ObjectiveReplayer: imperative='{objective_script.imperative[:80]}'")
-                    break
+        if attacker_budget != BudgetStatus.EXHAUSTED:
+            for goal in MVP_GOALS:
+                if goal.goal_id in self.config.objective_goals:
+                    progress_fn(f"[cycle {cycle}] ObjectiveReplayer: eliciting goal '{goal.goal_id}'...")
+                    objective_script = await replayer.run_and_distill(
+                        goal, engagement_id=self.config.engagement_id or None
+                    )
+                    if objective_script and objective_script.imperative:
+                        progress_fn(
+                            f"[cycle {cycle}] ObjectiveReplayer: "
+                            f"imperative='{objective_script.imperative[:80]}'"
+                        )
+                        break
 
         chain_active = isinstance(self.runner.strategy, ChainStrategy)
         suite = (
@@ -188,10 +541,42 @@ class MuzzleOrchestrator:
             if objective_script and ranked
             else []
         )
-        _progress(f"[cycle {cycle}] Grafter suite: {len(suite)} TestSpecs grafted")
+        progress_fn(f"[cycle {cycle}] Grafter suite: {len(suite)} TestSpecs grafted")
 
         self.runner._cycle = int(cycle)
-        results = await self.runner.run_all(suite, on_result=on_result)
+        results = []
+        for spec in suite:
+            # Budget gate per spec
+            if self.budget_tracker.check("attacker") == BudgetStatus.EXHAUSTED:
+                progress_fn(f"[cycle {cycle}] Attacker budget EXHAUSTED — stopping test execution")
+                break
+            if self.tool_counter.check("attacker") == ToolBudgetStatus.EXHAUSTED:
+                progress_fn(f"[cycle {cycle}] Attacker tool budget EXHAUSTED — stopping test execution")
+                break
+
+            result = await self.runner.run_one(spec)
+            self.tool_counter.increment("attacker")
+            if result:
+                results.append(result)
+                if on_result:
+                    on_result(result)
+                # Update bandit and strategic memory
+                self.bandit.update_from_result(result, spec, cycle)
+                self.strategic_memory.update_from_result(result, spec, cycle)
+                self.working_memory.record_vessel_outcome(
+                    vessel_kind=spec.vessels[0].kind.value if spec.vessels else "unknown",
+                    technique=spec.technique_family,
+                    status=result.status.value if hasattr(result.status, "value") else str(result.status),
+                    oracle_codes=[oc.value if hasattr(oc, "value") else str(oc) for oc in (result.hard_flags or {})],
+                    turn_count=result.turn_count,
+                )
+
+        # End-of-cycle: persist memory and bandit state
+        self.strategic_memory.ingest_working_memory(self.working_memory)
+        engagement = self.config.engagement_id
+        if engagement:
+            self.strategic_memory.save(engagement)
+            self.bandit.save(engagement)
 
         surfaces = sorted({c.vessel_kind.value for c in ranked})
         return MuzzleCycleResult(
@@ -211,9 +596,23 @@ class MuzzleOrchestrator:
         all_results: list[MuzzleCycleResult] = []
         seen_surfaces: set[str] = set()
 
+        def _progress(msg: str) -> None:
+            if progress_fn:
+                progress_fn(msg)
+
         for cycle in range(max(1, int(self.config.max_muzzle_cycles))):
+            # Campaign budget gate
+            if self.budget_tracker.is_campaign_exhausted():
+                _progress(f"[run] Campaign token budget EXHAUSTED after cycle {cycle - 1} — stopping")
+                break
+
             result = await self.run_cycle(exploration_tasks, cycle=cycle, on_result=on_result, progress_fn=progress_fn)
             all_results.append(result)
+
+            _progress(
+                f"[run] Cycle {cycle} budget summary: "
+                f"{self.budget_tracker.to_telemetry_dict()}"
+            )
 
             new_surfaces = set(result.surfaces_found) - seen_surfaces
             seen_surfaces.update(result.surfaces_found)

@@ -110,6 +110,12 @@ class RunConfig(_HarnessBaseModel):
     top_k_vessels: int = 3
     objective_goals: list[str] = Field(default_factory=lambda: ["prompt_exfil", "state_exfil"])
     no_muzzle: bool = False
+    # Budget subsystem fields
+    explorer_token_ceiling: int = 50_000
+    attacker_token_ceiling: int = 80_000
+    campaign_token_budget: int = 500_000
+    explorer_tool_limit: int = 20
+    attacker_tool_limit: int = 15
     surface_catalog_map: dict[str, str] = Field(
         default_factory=dict,
         description="Map catalog_path → surface string. "
@@ -152,6 +158,9 @@ class TraceStep(_HarnessBaseModel):
     tool_calls_after: list[dict] = Field(default_factory=list)
     memory_before: list[dict] = Field(default_factory=list)
     memory_after: list[dict] = Field(default_factory=list)
+    # TRD-17: full debug_state snapshots from GET /debug/{session_id}
+    debug_before: dict = Field(default_factory=dict)
+    debug_after: dict = Field(default_factory=dict)
 
 
 class ExplorationTrace(_HarnessBaseModel):
