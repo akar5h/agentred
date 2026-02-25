@@ -84,6 +84,41 @@ class Summarizer:
                 turn_index=step.turn_index,
             )
 
+        # TRD-17: subagent_invoked — new subagents in debug_after vs debug_before
+        db_before = step.debug_before if isinstance(step.debug_before, dict) else {}
+        db_after = step.debug_after if isinstance(step.debug_after, dict) else {}
+        before_subagents = db_before.get("subagents", [])
+        after_subagents = db_after.get("subagents", [])
+        if len(after_subagents) > len(before_subagents):
+            return ExecutionStep(
+                step_type="subagent_invoked",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        # TRD-17: external_api_called — new entries in external_calls
+        before_ext = db_before.get("external_calls", [])
+        after_ext = db_after.get("external_calls", [])
+        if len(after_ext) > len(before_ext):
+            return ExecutionStep(
+                step_type="external_api_called",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        # TRD-17: tool_schema_probed — tool_schemas appeared or changed
+        before_schemas = db_before.get("tool_schemas", [])
+        after_schemas = db_after.get("tool_schemas", [])
+        if after_schemas and after_schemas != before_schemas:
+            return ExecutionStep(
+                step_type="tool_schema_probed",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
         return ExecutionStep(
             step_type="chat_turn",
             artifact_ref=None,
@@ -106,6 +141,12 @@ class Summarizer:
             surfaces.append("tool_calling")
         if "memory_write" in kinds:
             surfaces.append("memory_write")
+        if "subagent_invoked" in kinds:
+            surfaces.append("subagent_spawn")
+        if "external_api_called" in kinds:
+            surfaces.append("external_api")
+        if "tool_schema_probed" in kinds:
+            surfaces.append("tool_schema")
         return surfaces
 
     def _extract_doc_ref(self, response: str, docs: list[dict]) -> str | None:
