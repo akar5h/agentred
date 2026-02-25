@@ -317,6 +317,8 @@ async def _run(args: argparse.Namespace) -> int:
                             "vessels_grafted": r.vessels_grafted,
                             "objective_goal": r.objective_script.goal_id if r.objective_script else "",
                             "judge_results": len(r.judge_results),
+                            "validation": r.validation,
+                            "think_steps_count": len(r.think_steps),
                         }
                         for r in cycle_results
                     ],

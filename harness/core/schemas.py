@@ -247,3 +247,12 @@ class ObjectiveScript(_HarnessBaseModel):
     imperative: str
     context_hint: str = ""
     distilled_from: list[str] = Field(default_factory=list)
+
+
+class ThinkStep(_HarnessBaseModel):
+    timestamp_iso: str = ""
+    cycle: int = 0
+    reasoning: str = ""
+    context: str = ""       # "pre_exploration", "post_grafter", "attack_planning", etc.
+    decision: str = ""
+    alternatives_considered: list[str] = Field(default_factory=list)

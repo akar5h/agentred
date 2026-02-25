@@ -16,3 +16,8 @@ BUDGET_EXHAUSTED = "budget_exhausted"
 BUDGET_CYCLE_SUMMARY = "budget_cycle_summary"
 TOOL_BUDGET_WARNING = "tool_budget_warning"
 TOOL_BUDGET_EXHAUSTED = "tool_budget_exhausted"
+# Think + streaming events
+THINK_STEP = "think_step"
+SUBAGENT_START = "subagent_start"
+SUBAGENT_END = "subagent_end"
+VALIDATION_REPORT = "validation_report"

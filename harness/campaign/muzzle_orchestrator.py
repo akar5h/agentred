@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from harness.attack.synthesis.chain_strategy import ChainStrategy
@@ -27,6 +27,8 @@ class MuzzleCycleResult:
     vessels_grafted: int
     objective_script: ObjectiveScript | None
     judge_results: list
+    validation: dict = field(default_factory=dict)
+    think_steps: list = field(default_factory=list)
 
 
 def make_victim_tools(victim: VictimAdapter, session_id: str):
@@ -261,6 +263,10 @@ class MuzzleOrchestrator:
         # Bandit triage
         self.bandit = SurfaceBandit.load(engagement) if engagement else SurfaceBandit()
 
+        # Think log for structured reasoning capture
+        from harness.campaign.think_tool import ThinkLog
+        self._think_log = ThinkLog(cycle=0)
+
         # Wire memory/bandit into grafter scoring
         self.grafter.set_strategic_memory(self.strategic_memory)
         self.grafter.set_bandit(self.bandit)
@@ -311,6 +317,10 @@ class MuzzleOrchestrator:
         )
         mem_tools = make_memory_tools(self.working_memory, self.strategic_memory)
 
+        # Think tool for structured reasoning
+        from harness.campaign.think_tool import make_think_tool
+        think_tool = make_think_tool(self._think_log, cycle=0, use_stream_writer=True)
+
         memory_dir = f"reports/{self.config.engagement_id}/memory/"
         from harness.explorer.surface_prompts import (
             ATTACKER_SYSTEM_PROMPT,
@@ -323,6 +333,7 @@ class MuzzleOrchestrator:
             return create_deep_agent(
                 model=self.config.attacker_model,
                 system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
+                tools=[think_tool] + orch_tools + mem_tools,
                 interrupt_on={
                     "novel_surface": True,
                     "partial_ambiguous": True,
@@ -382,6 +393,39 @@ class MuzzleOrchestrator:
             exploration_tasks, cycle, on_result=on_result, progress_fn=_progress
         )
 
+    def _process_stream_chunk(
+        self,
+        chunk: dict,
+        agent_label: str,
+        cycle: int,
+    ) -> None:
+        """Extract token usage from a stream chunk and record it in the budget tracker."""
+        # Path 1: top-level metadata.token_usage
+        meta = chunk.get("metadata", {})
+        if isinstance(meta, dict) and "token_usage" in meta:
+            tu = meta["token_usage"]
+            self.budget_tracker.record(
+                agent_label,
+                tu.get("input_tokens", 0),
+                tu.get("output_tokens", 0),
+                tu.get("est_cost", 0.0),
+            )
+            return
+
+        # Path 2: usage_metadata on AIMessage objects in chunk["messages"]
+        messages = chunk.get("messages", [])
+        if not isinstance(messages, list):
+            return
+        for msg in messages:
+            usage = getattr(msg, "usage_metadata", None)
+            if usage and isinstance(usage, dict):
+                self.budget_tracker.record(
+                    agent_label,
+                    usage.get("input_tokens", 0),
+                    usage.get("output_tokens", 0),
+                    usage.get("total_cost", 0.0),
+                )
+
     async def _run_cycle_agentic(
         self,
         exploration_tasks: list[ExplorationTask],
@@ -390,7 +434,12 @@ class MuzzleOrchestrator:
         progress_fn: Callable[[str], None],
     ) -> MuzzleCycleResult:
         import json as _json
-        progress_fn(f"[cycle {cycle}] Agentic mode: invoking Orchestrator SubAgent...")
+
+        # Reset think_log for this cycle
+        from harness.campaign.think_tool import ThinkLog
+        self._think_log = ThinkLog(cycle=cycle)
+
+        progress_fn(f"[cycle {cycle}] Agentic mode: streaming Orchestrator SubAgent...")
         tasks_json = _json.dumps([t.model_dump() for t in exploration_tasks])
         input_dict = {
             "messages": [
@@ -413,25 +462,55 @@ class MuzzleOrchestrator:
             }),
         }
         try:
-            result_state = await self._orchestrator.ainvoke(input_dict)  # type: ignore[union-attr]
-            # Record token usage from result metadata if available
-            if isinstance(result_state, dict):
-                meta = result_state.get("metadata", {})
-                if isinstance(meta, dict) and "token_usage" in meta:
-                    tu = meta["token_usage"]
-                    self.budget_tracker.record(
-                        "attacker",
-                        tu.get("input_tokens", 0),
-                        tu.get("output_tokens", 0),
-                        tu.get("est_cost", 0.0),
-                    )
+            last_chunk: dict = {}
+            active_subagent: str | None = None
+
+            async for namespace, chunk in self._orchestrator.astream(  # type: ignore[union-attr]
+                input_dict,
+                stream_mode="updates",
+                subgraphs=True,
+            ):
+                # Determine agent label from namespace tuple
+                if not namespace:
+                    agent_label = "orchestrator"
+                else:
+                    ns_str = str(namespace)
+                    if "explorer" in ns_str:
+                        agent_label = "explorer"
+                    elif "attacker" in ns_str:
+                        agent_label = "attacker"
+                    else:
+                        agent_label = "orchestrator"
+
+                # Track SubAgent transitions
+                if agent_label != "orchestrator" and agent_label != active_subagent:
+                    if active_subagent is not None:
+                        progress_fn(f"[cycle {cycle}] SubAgent '{active_subagent}' ended")
+                    active_subagent = agent_label
+                    progress_fn(f"[cycle {cycle}] SubAgent '{agent_label}' started")
+
+                # Process token usage from chunk
+                if isinstance(chunk, dict):
+                    self._process_stream_chunk(chunk, agent_label, cycle)
+                    last_chunk = chunk
+
+                # Mid-stream budget enforcement
+                if self.budget_tracker.is_campaign_exhausted():
+                    progress_fn(f"[cycle {cycle}] Budget EXHAUSTED mid-stream — breaking")
+                    break
+
+            # Close last subagent
+            if active_subagent is not None:
+                progress_fn(f"[cycle {cycle}] SubAgent '{active_subagent}' ended")
+
+            # Extract results from the final accumulated state
             last_msg = ""
-            if isinstance(result_state, dict):
-                msgs = result_state.get("messages", [])
-                if msgs:
+            if isinstance(last_chunk, dict):
+                msgs = last_chunk.get("messages", [])
+                if isinstance(msgs, list) and msgs:
                     last = msgs[-1]
                     last_msg = getattr(last, "content", "") or str(last)
-            # Attempt to parse a structured summary out of the last message
+
             surfaces_found: list[str] = []
             vessels_grafted = 0
             try:
@@ -440,19 +519,39 @@ class MuzzleOrchestrator:
                 vessels_grafted = int(summary.get("specs_executed", 0))
             except Exception:
                 pass
+
             progress_fn(
                 f"[cycle {cycle}] Agentic cycle done: surfaces={surfaces_found}, "
-                f"specs_executed={vessels_grafted}"
+                f"specs_executed={vessels_grafted}, think_steps={len(self._think_log.steps)}"
             )
+
+            from harness.campaign.validator import AgentValidator
+            validator = AgentValidator()
+            report = validator.validate(
+                cycle=int(cycle),
+                surfaces_explored=surfaces_found,
+                surface_stats={
+                    s: {"attempts": st.attempts, "successes": st.successes}
+                    for s, st in self.strategic_memory.surface_stats.items()
+                },
+                total_attempts=sum(st.attempts for st in self.strategic_memory.surface_stats.values()),
+                total_successes=sum(st.successes for st in self.strategic_memory.surface_stats.values()),
+                surfaces_discovered=len(surfaces_found),
+                specs_count=vessels_grafted,
+                think_step_count=len(self._think_log.steps),
+            )
+
             return MuzzleCycleResult(
                 cycle=int(cycle),
                 surfaces_found=surfaces_found,
                 vessels_grafted=vessels_grafted,
                 objective_script=None,
                 judge_results=[],
+                validation=report.to_dict(),
+                think_steps=self._think_log.to_telemetry_dicts(),
             )
         except Exception as exc:
-            progress_fn(f"[cycle {cycle}] Agentic invoke failed ({exc}), falling back to scripted")
+            progress_fn(f"[cycle {cycle}] Agentic stream failed ({exc}), falling back to scripted")
             return await self._run_cycle_scripted(
                 exploration_tasks, cycle, on_result=on_result, progress_fn=progress_fn
             )
@@ -579,12 +678,31 @@ class MuzzleOrchestrator:
             self.bandit.save(engagement)
 
         surfaces = sorted({c.vessel_kind.value for c in ranked})
+
+        from harness.campaign.validator import AgentValidator
+        validator = AgentValidator()
+        report = validator.validate(
+            cycle=int(cycle),
+            surfaces_explored=surfaces,
+            surface_stats={
+                s: {"attempts": st.attempts, "successes": st.successes}
+                for s, st in self.strategic_memory.surface_stats.items()
+            },
+            total_attempts=sum(st.attempts for st in self.strategic_memory.surface_stats.values()),
+            total_successes=sum(st.successes for st in self.strategic_memory.surface_stats.values()),
+            surfaces_discovered=len(surfaces_seen),
+            specs_count=len(suite),
+            think_step_count=0,
+        )
+
         return MuzzleCycleResult(
             cycle=int(cycle),
             surfaces_found=surfaces,
             vessels_grafted=len(suite),
             objective_script=objective_script,
             judge_results=results,
+            validation=report.to_dict(),
+            think_steps=[],
         )
 
     async def run(
