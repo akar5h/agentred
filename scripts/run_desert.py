@@ -30,6 +30,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from harness.attack.catalog.loader import load_test_specs
+from harness.attack.synthesis.chain_strategy import ChainStrategy
 from harness.attack.synthesis.static_strategy import StaticStrategy
 from harness.campaign.eval_metrics import compute_metrics
 from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
@@ -116,9 +117,9 @@ async def _run(args: argparse.Namespace) -> int:
         timeout_seconds=args.timeout,
         adaptive=False,
         engagement_id=engagement_id,
-        max_muzzle_cycles=1,
+        max_muzzle_cycles=3,
         top_k_vessels=2,
-        campaign_token_budget=100_000,
+        campaign_token_budget=300_000,
         explorer_token_ceiling=20_000,
         attacker_token_ceiling=30_000,
     )
@@ -137,7 +138,16 @@ async def _run(args: argparse.Namespace) -> int:
     telemetry_jsonl = run_dir / "telemetry.jsonl"
 
     victim = DeepAgentAdapter(base_url=config.base_url, mode="stream")
-    strategy = StaticStrategy()
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if api_key:
+        strategy = ChainStrategy(
+            endpoint=config.attacker_endpoint,
+            api_key=api_key,
+            model=config.attacker_model,
+            max_requests_per_minute=config.attacker_max_rpm,
+        )
+    else:
+        strategy = StaticStrategy()
     judge = Judge(pattern_oracle=PatternOracle(), llm_oracle=None)
 
     rows: list[dict] = []
@@ -180,8 +190,8 @@ async def _run(args: argparse.Namespace) -> int:
             if verbose else None,
         )
 
-        # Layer 2: MUZZLE loop (1 cycle)
-        print(f"\n=== Layer 2: MUZZLE loop (1 cycle, {'agentic' if engagement_id else 'scripted'}) ===")
+        # Layer 2: MUZZLE loop (up to 3 cycles)
+        print(f"\n=== Layer 2: MUZZLE loop (up to {config.max_muzzle_cycles} cycles, {'agentic' if engagement_id else 'scripted'}) ===")
         orchestrator = MuzzleOrchestrator(victim=victim, runner=runner, config=config)
         cycle_results = await orchestrator.run(
             _desert_exploration_tasks(),

@@ -758,7 +758,12 @@ class MuzzleOrchestrator:
 
             new_surfaces = set(result.surfaces_found) - seen_surfaces
             seen_surfaces.update(result.surfaces_found)
-            if cycle > 0 and not new_surfaces:
+            # Continue if: new surfaces found OR any attack succeeded this cycle
+            has_hits = any(
+                r.status.value in ("Success", "Injection")
+                for r in (result.judge_results or [])
+            )
+            if cycle > 0 and not new_surfaces and not has_hits:
                 break
 
         return all_results
