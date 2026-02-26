@@ -90,14 +90,14 @@ class RunConfig(_HarnessBaseModel):
     runs_per_scenario: int = 1
     timeout_seconds: float = 120.0
     adaptive: bool = False
-    attacker_model: str = "moonshotai/kimi-k2-0905"
-    attacker_fallback_model: str = "moonshotai/kimi-k2-thinking"
+    attacker_model: str = "deepseek/deepseek-v3.2"
+    attacker_fallback_model: str = "deepseek/deepseek-v3.2"
     attacker_endpoint: str = "https://openrouter.ai/api/v1/chat/completions"
     attacker_api_key_env: str = "OPENROUTER_API_KEY"
     attacker_max_rpm: int = 6
     attacker_cooldown_seconds: float = 15.0
     analyst_enabled: bool = True
-    analyst_model: str = "anthropic/claude-sonnet-4-6"
+    analyst_model: str = "deepseek/deepseek-v3.2"
     analyst_endpoint: str = "https://openrouter.ai/api/v1/chat/completions"
     analyst_api_key_env: str = "OPENROUTER_API_KEY"
     scenario_filter: list[str] = Field(default_factory=list)

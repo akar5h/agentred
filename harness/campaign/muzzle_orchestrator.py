@@ -286,6 +286,28 @@ class MuzzleOrchestrator:
                 pass  # Missing catalog is non-fatal
         return router
 
+    def _make_llm(self, model_str: str):
+        """Construct a LangChain chat model for the given model string.
+
+        For OpenRouter models (containing '/'), creates ChatOpenAI with
+        OpenRouter base_url. For provider-prefixed models (e.g. 'anthropic:...'),
+        uses init_chat_model directly.
+        """
+        import os as _os
+        api_key = _os.getenv(self.config.attacker_api_key_env, "").strip()
+
+        if "/" in model_str and not model_str.startswith(("openai:", "anthropic:")):
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                model=model_str,
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key,
+                max_tokens=4096,
+            )
+
+        from langchain.chat_models import init_chat_model
+        return init_chat_model(model_str)
+
     def _build_orchestrator(self):
         if not self.config.engagement_id:
             return None
@@ -329,9 +351,11 @@ class MuzzleOrchestrator:
         )
 
         try:
+            llm = self._make_llm(self.config.attacker_model)
+
             # deepagents 0.4.3 — no FilesystemBackend; use middleware without persistent backend
             return create_deep_agent(
-                model=self.config.attacker_model,
+                model=llm,
                 system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
                 tools=[think_tool] + orch_tools + mem_tools,
                 interrupt_on={
@@ -351,14 +375,14 @@ class MuzzleOrchestrator:
                         description="Runs benign tasks against the victim to map attack surfaces across all 7 surfaces",
                         system_prompt=EXPLORER_SYSTEM_PROMPT,
                         tools=victim_tools,
-                        model=self.config.attacker_model,
+                        model=llm,
                     ),
                     SubAgent(
                         name="attacker",
                         description="Executes adversarial TestSpec payloads against the victim",
                         system_prompt=ATTACKER_SYSTEM_PROMPT,
                         tools=victim_tools + orch_tools + mem_tools,
-                        model=self.config.attacker_model,
+                        model=llm,
                     ),
                 ],
             )
