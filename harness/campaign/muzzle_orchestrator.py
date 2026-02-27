@@ -312,9 +312,16 @@ class MuzzleOrchestrator:
         if not self.config.engagement_id:
             return None
 
+        import os as _os
+        api_key = _os.getenv(self.config.attacker_api_key_env, "").strip()
+        if not api_key:
+            import warnings
+            warnings.warn("No API key found — skipping agentic orchestrator, using scripted mode.")
+            return None
+
         try:
             from deepagents import SubAgent, create_deep_agent
-            from deepagents.middleware import MemoryMiddleware, SummarizationMiddleware
+            from deepagents.backends.filesystem import FilesystemBackend
         except Exception:
             return None
 
@@ -322,12 +329,11 @@ class MuzzleOrchestrator:
         session_id = f"orch-{self.config.engagement_id}"
         victim_tools = make_victim_tools(self.victim, session_id)
 
-        import os as _os
-        api_key = _os.getenv(self.config.analyst_api_key_env, "").strip()
+        analyst_key = _os.getenv(self.config.analyst_api_key_env, "").strip() or api_key
         from harness.objective_replay.replayer import ObjectiveReplayer
         replayer = ObjectiveReplayer(
             victim=self.victim,
-            openrouter_api_key=api_key,
+            openrouter_api_key=analyst_key,
             model=self.config.analyst_model,
         )
         orch_tools = make_orchestration_tools(
@@ -353,11 +359,20 @@ class MuzzleOrchestrator:
         try:
             llm = self._make_llm(self.config.attacker_model)
 
-            # deepagents 0.4.3 — no FilesystemBackend; use middleware without persistent backend
+            import os as _os2
+            _memory_root = _os2.path.abspath(memory_dir)
+            _os2.makedirs(_memory_root, exist_ok=True)
+            fs_backend = FilesystemBackend(root_dir=_memory_root, virtual_mode=False)
+
+            # AGENTS.md in memory_dir is optional — graceful degradation if missing
+            memory_sources = [f"{_memory_root}/AGENTS.md"]
+
             return create_deep_agent(
                 model=llm,
                 system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
                 tools=[think_tool] + orch_tools + mem_tools,
+                backend=fs_backend,
+                memory=memory_sources,
                 interrupt_on={
                     "novel_surface": True,
                     "partial_ambiguous": True,
@@ -365,10 +380,7 @@ class MuzzleOrchestrator:
                     "high_confidence_hit": True,
                     "catalog_enrichment": True,
                 },
-                middleware=[
-                    MemoryMiddleware(),
-                    SummarizationMiddleware(),
-                ],
+                middleware=[],
                 subagents=[
                     SubAgent(
                         name="explorer",

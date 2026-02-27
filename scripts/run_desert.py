@@ -26,8 +26,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+load_dotenv()  # Load .env before any os.getenv calls
 
 from harness.attack.catalog.loader import load_test_specs
 from harness.attack.synthesis.chain_strategy import ChainStrategy

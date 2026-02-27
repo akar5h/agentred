@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+from harness.core.exceptions import InfraError
 from harness.core.schemas import ExplorationTask, ExplorationTrace, FindingMemory, TraceStep
 from harness.victim.base import VictimAdapter
 
@@ -30,7 +31,10 @@ class Explorer:
 
         steps: list[TraceStep] = []
         for turn_index, message in enumerate(task.turns):
-            docs_before = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
+            try:
+                docs_before = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
+            except InfraError:
+                docs_before = []
 
             tool_calls_before: list[dict] = []
             if hasattr(self.victim, "get_tool_calls"):
@@ -54,9 +58,15 @@ class Explorer:
                     pass
 
             t0 = time.monotonic_ns()
-            response_data = await self.victim.send_turn(session_id, message, timeout=self.timeout_seconds)
+            try:
+                response_data = await self.victim.send_turn(session_id, message, timeout=self.timeout_seconds)
+            except InfraError as exc:
+                response_data = {"response": f"[INFRA_ERROR] {exc}", "usage": {}}
             duration_ms = int((time.monotonic_ns() - t0) // 1_000_000)
-            docs_after = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
+            try:
+                docs_after = await self.victim.list_docs(session_id, timeout=self.timeout_seconds)
+            except InfraError:
+                docs_after = docs_before
 
             tool_calls_after: list[dict] = []
             if hasattr(self.victim, "get_tool_calls"):
@@ -151,7 +161,16 @@ class Explorer:
 
         traces: list[ExplorationTrace] = []
         for task in working_tasks:
-            traces.append(await self.run_task(task))
+            try:
+                traces.append(await self.run_task(task))
+            except InfraError:
+                # Task-level failure (e.g. reset_session timeout) — skip, continue
+                traces.append(ExplorationTrace(
+                    task_id=task.task_id,
+                    session_id=f"explore-{task.task_id}-failed",
+                    steps=[],
+                    target_base_url=str(getattr(self.victim, "base_url", "")),
+                ))
         return traces
 
     async def load_memory_bias(self, engagement_id: str) -> dict[str, int]:
