@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import List, Optional
 
+from harness.budget.tracker import BudgetTracker
 from harness.campaign.runner import CampaignRunner
 from harness.core.enums import Status
 from harness.core.schemas import JudgeResult, TestSpec
@@ -18,10 +19,12 @@ class Scheduler:
         runner: CampaignRunner,
         max_cost_usd: float = 10.0,
         max_infra_fail_consecutive: int = 3,
+        budget_tracker: Optional[BudgetTracker] = None,
     ):
         self.runner = runner
         self.max_cost_usd = float(max_cost_usd)
         self.max_infra_fail_consecutive = max(1, int(max_infra_fail_consecutive))
+        self.budget_tracker = budget_tracker
 
     async def run(
         self,
@@ -61,7 +64,11 @@ class Scheduler:
                 if consecutive_infra >= self.max_infra_fail_consecutive:
                     return out
 
-                # Placeholder for future token/cost accounting.
-                cost_spent += 0.0
+                # Read estimated cost from budget tracker if available
+                cost_spent = (
+                    self.budget_tracker.campaign_usage.est_cost
+                    if self.budget_tracker
+                    else 0.0
+                )
 
         return out

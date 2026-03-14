@@ -41,25 +41,41 @@ def make_victim_tools(victim: VictimAdapter, session_id: str):
     @tool
     async def send_turn_tool(message: str) -> str:
         """Send one conversational turn to the victim and return its response."""
-        result = await victim.send_turn(session_id, message)
-        return str((result or {}).get("response", ""))
+        try:
+            result = await victim.send_turn(session_id, message)
+            return str((result or {}).get("response", ""))
+        except Exception as exc:
+            return f"[INFRA_ERROR] send_turn failed: {exc}"
 
     @tool
     async def list_docs_tool() -> list:
         """List all documents currently available in the victim session."""
-        return await victim.list_docs(session_id)
+        try:
+            return await victim.list_docs(session_id)
+        except Exception:
+            return []
 
     @tool
     async def reset_session_tool() -> str:
         """Reset the victim session to a clean state."""
-        await victim.reset_session(session_id)
-        return "session reset"
+        try:
+            await victim.reset_session(session_id)
+            return "session reset"
+        except Exception as exc:
+            return f"reset failed: {exc}"
 
     @tool
     async def upload_file_tool(filename: str, content: str, content_type: str = "text/plain") -> str:
-        """Upload a file to the victim session and return the upload result."""
-        result = await victim.upload_file(session_id, filename, content.encode("utf-8"), content_type)
-        return str(result)
+        """Upload a file to the victim session and return the upload result.
+        Only .md, .pdf, and .csv files are supported by the victim."""
+        allowed_ext = (".md", ".pdf", ".csv")
+        if not any(filename.lower().endswith(ext) for ext in allowed_ext):
+            return f"Upload skipped: victim only accepts {', '.join(allowed_ext)} files. Got: {filename}"
+        try:
+            result = await victim.upload_file(session_id, filename, content.encode("utf-8"), content_type)
+            return str(result)
+        except Exception as exc:
+            return f"Upload failed: {exc}"
 
     return [send_turn_tool, list_docs_tool, reset_session_tool, upload_file_tool]
 
@@ -547,14 +563,9 @@ class MuzzleOrchestrator:
                     last = msgs[-1]
                     last_msg = getattr(last, "content", "") or str(last)
 
-            surfaces_found: list[str] = []
-            vessels_grafted = 0
-            try:
-                summary = _json.loads(last_msg) if last_msg.strip().startswith("{") else {}
-                surfaces_found = list(summary.get("surfaces_found", []))
-                vessels_grafted = int(summary.get("specs_executed", 0))
-            except Exception:
-                pass
+            parsed_output = self._parse_agentic_output(last_msg, cycle)
+            surfaces_found = parsed_output.surfaces_found
+            vessels_grafted = parsed_output.specs_executed
 
             progress_fn(
                 f"[cycle {cycle}] Agentic cycle done: surfaces={surfaces_found}, "
@@ -591,6 +602,64 @@ class MuzzleOrchestrator:
             return await self._run_cycle_scripted(
                 exploration_tasks, cycle, on_result=on_result, progress_fn=progress_fn
             )
+
+    def _parse_agentic_output(self, raw: str, cycle: int) -> "AgenticCycleOutput":
+        """Parse LLM output into AgenticCycleOutput with progressive fallbacks."""
+        import json as _json
+        import logging
+        import re
+
+        from harness.core.schemas import AgenticCycleOutput
+
+        logger = logging.getLogger(__name__)
+
+        # Strip markdown code fences if present
+        stripped = raw.strip()
+        fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, re.DOTALL)
+        if fence_match:
+            stripped = fence_match.group(1)
+
+        # Path 1: strict Pydantic parse
+        if stripped.startswith("{"):
+            try:
+                result = AgenticCycleOutput.model_validate_json(stripped)
+                logger.info("[parse_agentic_output] Path 1: strict Pydantic parse succeeded")
+                return result
+            except Exception:
+                pass
+
+            # Path 2: json.loads + model_validate (handles partial/extra keys)
+            try:
+                data = _json.loads(stripped)
+                result = AgenticCycleOutput.model_validate(data)
+                logger.info("[parse_agentic_output] Path 2: json.loads + model_validate succeeded")
+                return result
+            except Exception:
+                pass
+
+        # Path 3: regex extraction from unstructured text
+        logger.warning(
+            "[parse_agentic_output] Path 3: falling back to regex extraction from unstructured text"
+        )
+        surfaces: list[str] = []
+        surface_names = [
+            "direct_chat", "file_upload", "doc_memory", "tool_calling",
+            "subagent_spawn", "external_api", "memory_state",
+            "memory_poisoning", "tool_poisoning", "data_extraction",
+        ]
+        for s in surface_names:
+            if s in raw.lower():
+                surfaces.append(s)
+
+        specs_match = re.search(r"specs?\s*(?:executed|count|run)[:\s]*(\d+)", raw, re.IGNORECASE)
+        specs_count = int(specs_match.group(1)) if specs_match else 0
+
+        return AgenticCycleOutput(
+            cycle=cycle,
+            surfaces_found=surfaces,
+            specs_executed=specs_count,
+            error="parsed_via_regex_fallback" if raw.strip() else "empty_output",
+        )
 
     async def _run_cycle_scripted(
         self,

@@ -15,6 +15,7 @@ from harness.core.exceptions import InfraError
 from harness.core.schemas import JudgeResult, RunConfig, TelemetryEvent, TestSpec
 from harness.oracle.base import Oracle
 from harness.reflection.controller import ReflectionController
+from harness.reporting.finding_card import FindingCard, FindingCardGenerator
 from harness.telemetry import events
 from harness.telemetry.emitter import TelemetryEmitter
 from harness.victim.base import VictimAdapter
@@ -53,6 +54,7 @@ class CampaignRunner:
         self.config = config
         self.reflection_controller = reflection_controller or ReflectionController()
         self._cycle: int = 0
+        self.finding_cards: list[FindingCard] = []
 
     async def run_one(self, spec: TestSpec, rep: int = 1) -> JudgeResult:
         run_id = uuid.uuid4().hex
@@ -363,6 +365,11 @@ class CampaignRunner:
         ):
             memory_entry = build_finding_memory(result, spec, observation, self._cycle)
             write_finding_memory(memory_entry, self.config.engagement_id)
+
+        # Emit FindingCard for any non-blocked, non-infra-fail result
+        card = FindingCardGenerator.from_judge_result(result, spec)
+        if card is not None:
+            self.finding_cards.append(card)
 
         return result
 

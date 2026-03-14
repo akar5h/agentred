@@ -256,3 +256,12 @@ class ThinkStep(_HarnessBaseModel):
     context: str = ""       # "pre_exploration", "post_grafter", "attack_planning", etc.
     decision: str = ""
     alternatives_considered: list[str] = Field(default_factory=list)
+
+
+class AgenticCycleOutput(_HarnessBaseModel):
+    """Validated output schema for agentic MUZZLE cycles."""
+    cycle: int
+    surfaces_found: list[str] = Field(default_factory=list)
+    specs_executed: int = 0
+    hits: list[dict] = Field(default_factory=list)
+    error: str = ""

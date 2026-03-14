@@ -121,6 +121,22 @@ chain-of-thought. This is mandatory — do not skip it. Use these context labels
 - Pass data between steps as JSON strings (not Python objects).
 - Prioritise surfaces with high bandit scores (they have unexplored potential or proven wins).
 
+## Required output format
+
+Your FINAL message MUST be a JSON object (no markdown fences) with exactly these keys:
+```
+{
+  "cycle": <int>,
+  "surfaces_found": ["surface_name_1", ...],
+  "specs_executed": <int>,
+  "hits": [{"scenario_id": "...", "oracle_codes": [...], "status": "..."}],
+  "error": ""
+}
+```
+
+Do not omit any key. If there are no hits, use an empty list. If there was an error, put the
+message in "error" and still fill in whatever partial data you have.
+
 ## Tools available
 
 - think(reasoning: str, context: str, decision: str) → str — reason before acting
