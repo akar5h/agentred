@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Iterator, Optional, Set, Tuple, Union
+
+logger = logging.getLogger("harness.attack.catalog.loader")
 
 from harness.attack.catalog.validator import validate_catalog
 from harness.core.enums import AttackSurface, OracleCode, VesselKind
@@ -87,6 +90,7 @@ def _attack_to_spec(attack: dict[str, Any], catalog: dict[str, Any]) -> TestSpec
             try:
                 oracle_codes.append(OracleCode(code))
             except ValueError:
+                logger.debug("Skipping invalid oracle code %r in catalog", code)
                 continue
 
     return TestSpec(

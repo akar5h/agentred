@@ -6,14 +6,14 @@ from typing import Tuple, Union
 
 
 def render_template_text(text: str, *, session_id: str, canary_token: str) -> str:
-    """Replace {{SESSION_ID}}, ${SESSION_ID}, {{CANARY_TOKEN}}, ${CANARY_TOKEN}."""
+    """Replace {{SESSION_ID}}, ${SESSION_ID}, {{CANARY_TOKEN}}, ${CANARY_TOKEN} (case-insensitive)."""
     if not text:
         return ""
     out = text
-    out = out.replace("{{SESSION_ID}}", session_id).replace("${SESSION_ID}", session_id)
-    out = out.replace("{{CANARY_TOKEN}}", canary_token).replace("${CANARY_TOKEN}", canary_token)
-    out = re.sub(r"\$\{SESSION_ID\}", session_id, out)
-    out = re.sub(r"\$\{CANARY_TOKEN\}", canary_token, out)
+    out = re.sub(r"\{\{SESSION_ID\}\}", session_id, out, flags=re.IGNORECASE)
+    out = re.sub(r"\$\{SESSION_ID\}", session_id, out, flags=re.IGNORECASE)
+    out = re.sub(r"\{\{CANARY_TOKEN\}\}", canary_token, out, flags=re.IGNORECASE)
+    out = re.sub(r"\$\{CANARY_TOKEN\}", canary_token, out, flags=re.IGNORECASE)
     return out
 
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger("harness.telemetry.replay")
 
 from harness.core.schemas import TelemetryEvent
 from harness.oracle.pattern_oracle import classify_observation
@@ -67,7 +70,8 @@ class DeterministicReplayer:
             try:
                 data = json.loads(line)
                 telemetry_events.append(TelemetryEvent(**data))
-            except Exception:
+            except Exception as exc:
+                logger.debug("Skipping malformed telemetry line: %s", exc)
                 continue
         return telemetry_events
 

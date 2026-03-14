@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from harness.core.enums import Status
+
+logger = logging.getLogger("harness.oracle.judge")
 from harness.core.schemas import JudgeResult
 from harness.oracle.base import Oracle
 from harness.oracle.llm_oracle import LlmOracle
@@ -14,7 +17,8 @@ def _raw_to_judge_result(observation: Dict[str, Any], raw: Dict[str, Any]) -> Ju
     status_raw = str(raw.get("status", Status.BLOCKED.value))
     try:
         status = Status(status_raw)
-    except Exception:
+    except Exception as exc:
+        logger.debug("Invalid status %r, defaulting to BLOCKED: %s", status_raw, exc)
         status = Status.BLOCKED
 
     responses = observation.get("responses", []) if isinstance(observation.get("responses"), list) else []

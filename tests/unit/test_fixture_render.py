@@ -41,3 +41,12 @@ def test_load_and_render_fixture_bytes_preserves_binary_for_non_text(tmp_path) -
 
     out = load_and_render_fixture_bytes(str(fixture), session_id="sid", canary_token="can")
     assert out == b"\x00\x01\x02"
+
+
+def test_render_case_insensitive() -> None:
+    out = render_template_text(
+        "CANARY_{{canary_token}} and {{Canary_Token}}",
+        session_id="s1",
+        canary_token="CANARY_abc",
+    )
+    assert out == "CANARY_CANARY_abc and CANARY_abc"

@@ -90,14 +90,14 @@ class RunConfig(_HarnessBaseModel):
     runs_per_scenario: int = 1
     timeout_seconds: float = 120.0
     adaptive: bool = False
-    attacker_model: str = "moonshotai/kimi-k2-0905"
-    attacker_fallback_model: str = "moonshotai/kimi-k2-thinking"
+    attacker_model: str = "deepseek/deepseek-v3.2"
+    attacker_fallback_model: str = "deepseek/deepseek-v3.2"
     attacker_endpoint: str = "https://openrouter.ai/api/v1/chat/completions"
     attacker_api_key_env: str = "OPENROUTER_API_KEY"
     attacker_max_rpm: int = 6
     attacker_cooldown_seconds: float = 15.0
     analyst_enabled: bool = True
-    analyst_model: str = "anthropic/claude-sonnet-4-6"
+    analyst_model: str = "deepseek/deepseek-v3.2"
     analyst_endpoint: str = "https://openrouter.ai/api/v1/chat/completions"
     analyst_api_key_env: str = "OPENROUTER_API_KEY"
     scenario_filter: list[str] = Field(default_factory=list)
@@ -110,6 +110,12 @@ class RunConfig(_HarnessBaseModel):
     top_k_vessels: int = 3
     objective_goals: list[str] = Field(default_factory=lambda: ["prompt_exfil", "state_exfil"])
     no_muzzle: bool = False
+    # Budget subsystem fields
+    explorer_token_ceiling: int = 50_000
+    attacker_token_ceiling: int = 80_000
+    campaign_token_budget: int = 500_000
+    explorer_tool_limit: int = 20
+    attacker_tool_limit: int = 15
     surface_catalog_map: dict[str, str] = Field(
         default_factory=dict,
         description="Map catalog_path → surface string. "
@@ -152,6 +158,9 @@ class TraceStep(_HarnessBaseModel):
     tool_calls_after: list[dict] = Field(default_factory=list)
     memory_before: list[dict] = Field(default_factory=list)
     memory_after: list[dict] = Field(default_factory=list)
+    # TRD-17: full debug_state snapshots from GET /debug/{session_id}
+    debug_before: dict = Field(default_factory=dict)
+    debug_after: dict = Field(default_factory=dict)
 
 
 class ExplorationTrace(_HarnessBaseModel):
@@ -238,3 +247,21 @@ class ObjectiveScript(_HarnessBaseModel):
     imperative: str
     context_hint: str = ""
     distilled_from: list[str] = Field(default_factory=list)
+
+
+class ThinkStep(_HarnessBaseModel):
+    timestamp_iso: str = ""
+    cycle: int = 0
+    reasoning: str = ""
+    context: str = ""       # "pre_exploration", "post_grafter", "attack_planning", etc.
+    decision: str = ""
+    alternatives_considered: list[str] = Field(default_factory=list)
+
+
+class AgenticCycleOutput(_HarnessBaseModel):
+    """Validated output schema for agentic MUZZLE cycles."""
+    cycle: int
+    surfaces_found: list[str] = Field(default_factory=list)
+    specs_executed: int = 0
+    hits: list[dict] = Field(default_factory=list)
+    error: str = ""

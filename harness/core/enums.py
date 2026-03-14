@@ -58,6 +58,8 @@ class VesselKind(str, Enum):
     UPLOADED_DOCUMENT = "uploaded_document"
     TOOL_OUTPUT = "tool_output"
     MEMORY_ENTRY = "memory_entry"
+    SUBAGENT_OUTPUT = "subagent_output"
+    TOOL_SCHEMA = "tool_schema"
 
 
 class AttackSurface(str, Enum):
@@ -66,3 +68,6 @@ class AttackSurface(str, Enum):
     MEMORY_POISONING = "memory_poisoning"
     TOOL_POISONING = "tool_poisoning"
     DATA_EXTRACTION = "data_extraction"
+    SUBAGENT_INJECTION = "subagent_injection"
+    EXTERNAL_API_EXPLOITATION = "external_api_exploitation"
+    TOOL_SCHEMA_ENUMERATION = "tool_schema_enumeration"
