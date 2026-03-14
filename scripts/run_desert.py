@@ -31,6 +31,11 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 load_dotenv()  # Load .env before any os.getenv calls
+# ChatOpenAI resolves auth from OPENAI_API_KEY env var — bridge from OpenRouter key
+_or_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+if _or_key:
+    os.environ["OPENAI_API_KEY"] = _or_key
+    os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
 
 from harness.attack.catalog.loader import load_test_specs
 from harness.attack.synthesis.chain_strategy import ChainStrategy
