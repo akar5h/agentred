@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -127,8 +128,6 @@ class LlmSynthStrategy(AttackStrategy):
         if elapsed < min_spacing:
             wait_for = min_spacing - elapsed
             if wait_for > 0:
-                import asyncio
-
                 await asyncio.sleep(wait_for)
         self._last_request_at = time.monotonic()
 

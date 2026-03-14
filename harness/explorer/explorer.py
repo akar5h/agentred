@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from uuid import uuid4
+
+logger = logging.getLogger("harness.explorer")
 
 from harness.core.exceptions import InfraError
 from harness.core.schemas import ExplorationTask, ExplorationTrace, FindingMemory, TraceStep
@@ -40,22 +43,22 @@ class Explorer:
             if hasattr(self.victim, "get_tool_calls"):
                 try:
                     tool_calls_before = await self.victim.get_tool_calls(session_id, timeout=self.timeout_seconds)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("get_tool_calls (before) failed: %s", exc)
 
             memory_before: list[dict] = []
             if hasattr(self.victim, "get_memories"):
                 try:
                     memory_before = await self.victim.get_memories(timeout=self.timeout_seconds)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("get_memories (before) failed: %s", exc)
 
             debug_before: dict = {}
             if hasattr(self.victim, "get_debug_state"):
                 try:
                     debug_before = await self.victim.get_debug_state(session_id, timeout=self.timeout_seconds)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("get_debug_state (before) failed: %s", exc)
 
             t0 = time.monotonic_ns()
             try:
@@ -72,22 +75,22 @@ class Explorer:
             if hasattr(self.victim, "get_tool_calls"):
                 try:
                     tool_calls_after = await self.victim.get_tool_calls(session_id, timeout=self.timeout_seconds)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("get_tool_calls (after) failed: %s", exc)
 
             memory_after: list[dict] = []
             if hasattr(self.victim, "get_memories"):
                 try:
                     memory_after = await self.victim.get_memories(timeout=self.timeout_seconds)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("get_memories (after) failed: %s", exc)
 
             debug_after: dict = {}
             if hasattr(self.victim, "get_debug_state"):
                 try:
                     debug_after = await self.victim.get_debug_state(session_id, timeout=self.timeout_seconds)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("get_debug_state (after) failed: %s", exc)
 
             step = TraceStep(
                 turn_index=turn_index,
@@ -148,8 +151,8 @@ class Explorer:
                     if stats.successes >= 1:
                         sm_focused.extend(self._generate_focused_tasks(surface, count=1))
                 working_tasks = sm_focused + working_tasks
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Strategic memory surface focus failed: %s", exc)
 
         if engagement_id:
             memory_bias = await self.load_memory_bias(engagement_id)
@@ -185,7 +188,8 @@ class Explorer:
                 continue
             try:
                 entry = FindingMemory(**json.loads(line))
-            except Exception:
+            except Exception as exc:
+                logger.debug("Skipping malformed finding memory line: %s", exc)
                 continue
             key = str(entry.attack_surface)
             surface_hits[key] = surface_hits.get(key, 0) + 1

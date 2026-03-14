@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from uuid import uuid4
+
+logger = logging.getLogger("harness.objective_replay.replayer")
 
 from harness.core.schemas import FindingMemory, ObjectiveScript, ObjectiveTask, ObjectiveTrace
 from harness.victim.base import VictimAdapter
@@ -135,7 +138,8 @@ class ObjectiveReplayer:
         for line in reversed(lines):
             try:
                 mem = FindingMemory(**json.loads(line))
-            except Exception:
+            except Exception as exc:
+                logger.debug("Skipping malformed finding memory line: %s", exc)
                 continue
             if target_codes & set(mem.oracle_codes_fired):
                 return ObjectiveScript(
@@ -155,7 +159,8 @@ class ObjectiveReplayer:
         try:
             from langchain_anthropic import ChatAnthropic
             from langchain_core.messages import HumanMessage, SystemMessage
-        except Exception:
+        except Exception as exc:
+            logger.warning("LangChain imports unavailable for distiller: %s", exc)
             return {}
 
         try:
@@ -166,7 +171,8 @@ class ObjectiveReplayer:
                     HumanMessage(content=f"Agent responses to elicitation turns:\n{combined}\n\nWrite the JSON object."),
                 ]
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Distiller LLM call failed: %s", exc)
             return {}
 
         content = self._extract_text(response)
@@ -195,8 +201,8 @@ class ObjectiveReplayer:
             return {}
         try:
             return json.loads(stripped)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Direct JSON parse failed, trying brace extraction: %s", exc)
 
         start = stripped.find("{")
         end = stripped.rfind("}")
@@ -204,7 +210,8 @@ class ObjectiveReplayer:
             snippet = stripped[start : end + 1]
             try:
                 return json.loads(snippet)
-            except Exception:
+            except Exception as exc:
+                logger.debug("Brace-extracted JSON parse failed: %s", exc)
                 return {}
         return {}
 

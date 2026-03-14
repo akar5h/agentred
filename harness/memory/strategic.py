@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger("harness.memory.strategic")
 
 if TYPE_CHECKING:
     from harness.core.schemas import JudgeResult, TestSpec
@@ -124,7 +127,8 @@ class StrategicMemory:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return cls._from_dict(data, engagement_id)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to load strategic memory for %s: %s", engagement_id, exc)
             return cls(engagement_id=engagement_id)
 
     def _to_dict(self) -> dict:

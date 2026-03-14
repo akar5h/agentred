@@ -140,12 +140,13 @@ class LangfuseExporter:
     def from_env(cls) -> LangfuseExporter | None:
         """Create exporter from environment variables.
 
-        Returns None if LANGFUSE_PUBLIC_KEY is not set (graceful degradation).
+        Returns None if either LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY
+        is missing (graceful degradation).
         """
         public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         secret_key = os.getenv("LANGFUSE_SECRET_KEY")
         if not public_key or not secret_key:
-            logger.debug("Langfuse not configured — LANGFUSE_PUBLIC_KEY or SECRET_KEY missing")
+            logger.debug("Langfuse not configured — LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY missing")
             return None
 
         host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")

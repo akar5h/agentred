@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html as _html
+import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -186,8 +187,6 @@ class EngagementReportGenerator:
 
 def _md_to_simple_html(md: str) -> str:
     """Convert a subset of markdown to HTML. Good enough for reports."""
-    import re
-
     lines = md.split("\n")
     html_lines: list[str] = []
     in_list = False
@@ -243,7 +242,6 @@ def _md_to_simple_html(md: str) -> str:
 
 def _bold(text: str) -> str:
     """Replace **text** with <strong>text</strong>."""
-    import re
     return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
 

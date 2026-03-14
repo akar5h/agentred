@@ -35,9 +35,16 @@ async def test_agentic_muzzle_smoke_scripted():
     except Exception:
         pytest.skip("Mock victim not running")
 
+    import tempfile
+    from pathlib import Path
+
+    from harness.attack.synthesis.static_strategy import StaticStrategy
     from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
     from harness.campaign.runner import CampaignRunner
     from harness.core.schemas import ExplorationTask, RunConfig
+    from harness.oracle.judge import Judge
+    from harness.oracle.pattern_oracle import PatternOracle
+    from harness.telemetry.emitter import TelemetryEmitter
     from harness.victim.api_adapter import RestApiAdapter
 
     victim = RestApiAdapter(MOCK_URL)
@@ -48,7 +55,14 @@ async def test_agentic_muzzle_smoke_scripted():
         top_k_vessels=2,
         engagement_id="smoke-trd17",
     )
-    runner = CampaignRunner(victim=victim, config=config)
+    strategy = StaticStrategy()
+    judge = Judge(pattern_oracle=PatternOracle(), llm_oracle=None)
+    tmp_dir = tempfile.mkdtemp()
+    emitter = TelemetryEmitter(Path(tmp_dir) / "smoke_telemetry.jsonl")
+    runner = CampaignRunner(
+        victim=victim, strategy=strategy, judge=judge,
+        emitter=emitter, config=config,
+    )
     mo = MuzzleOrchestrator(victim=victim, runner=runner, config=config)
 
     tasks = [

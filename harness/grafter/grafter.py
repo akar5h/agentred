@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Iterable
+
+logger = logging.getLogger("harness.grafter")
 
 from harness.core.enums import AttackSurface, OracleCode, Status, VesselKind
 from harness.core.schemas import (
@@ -340,8 +343,8 @@ class Grafter:
             try:
                 win_rate = self._strategic_memory.surface_win_rate(surface.value)  # type: ignore[union-attr]
                 strategic_boost = win_rate * 0.2
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Strategic memory boost lookup failed: %s", exc)
 
         # Bandit boost
         bandit_boost = 0.0
@@ -351,8 +354,8 @@ class Grafter:
             arm_id = f"{surface.value}::{technique}"
             try:
                 bandit_boost = self._bandit.boost_for_arm(arm_id)  # type: ignore[union-attr]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Bandit boost lookup failed: %s", exc)
 
         exploitability = self._compute_exploitability(
             saliency=saliency,
@@ -441,7 +444,8 @@ class Grafter:
         for value in values:
             try:
                 parsed.append(OracleCode(str(value)))
-            except Exception:
+            except Exception as exc:
+                logger.debug("Skipping invalid oracle code %r: %s", value, exc)
                 continue
         return parsed
 
@@ -548,6 +552,7 @@ class Grafter:
         if isinstance(extra, dict) and key in extra:
             try:
                 return float(extra.get(key))
-            except Exception:
+            except Exception as exc:
+                logger.debug("Extra hint %r conversion failed: %s", key, exc)
                 return default
         return default

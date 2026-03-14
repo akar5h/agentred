@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger("harness.triage.bandit")
 
 if TYPE_CHECKING:
     from harness.core.schemas import JudgeResult, TestSpec
@@ -123,5 +126,6 @@ class SurfaceBandit:
                     last_pulled_cycle=arm_data.get("last_pulled_cycle", 0),
                 )
             return bandit
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to load bandit state for %s: %s", engagement_id, exc)
             return cls()

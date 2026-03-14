@@ -23,6 +23,7 @@ from harness.campaign.runner import CampaignRunner
 from harness.core.schemas import ExplorationTask, RunConfig
 from harness.oracle.judge import Judge
 from harness.oracle.pattern_oracle import PatternOracle
+from harness.telemetry.emitter import TelemetryEmitter
 from harness.victim.deep_agent_adapter import DeepAgentAdapter
 
 
@@ -100,8 +101,10 @@ async def _run(args: argparse.Namespace) -> int:
             max_muzzle_cycles=args.max_cycles,
             timeout_seconds=args.timeout,
         )
+        scripted_emitter = TelemetryEmitter(out_dir / "scripted_telemetry.jsonl")
         scripted_runner = CampaignRunner(
-            victim=victim, strategy=strategy, judge=judge, config=scripted_config,
+            victim=victim, strategy=strategy, judge=judge,
+            emitter=scripted_emitter, config=scripted_config,
         )
         scripted_orch = MuzzleOrchestrator(
             victim=victim, runner=scripted_runner, config=scripted_config,
@@ -128,8 +131,10 @@ async def _run(args: argparse.Namespace) -> int:
             max_muzzle_cycles=args.max_cycles,
             timeout_seconds=args.timeout,
         )
+        agentic_emitter = TelemetryEmitter(out_dir / "agentic_telemetry.jsonl")
         agentic_runner = CampaignRunner(
-            victim=victim, strategy=strategy, judge=judge, config=agentic_config,
+            victim=victim, strategy=strategy, judge=judge,
+            emitter=agentic_emitter, config=agentic_config,
         )
         agentic_orch = MuzzleOrchestrator(
             victim=victim, runner=agentic_runner, config=agentic_config,

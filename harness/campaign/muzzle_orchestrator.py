@@ -1,16 +1,39 @@
 from __future__ import annotations
 
+import asyncio
+import functools
+import json
+import logging
+import os
+import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from harness.attack.catalog.loader import load_test_specs
 from harness.attack.synthesis.chain_strategy import ChainStrategy
 from harness.budget.tool_counter import ToolBudgetStatus, ToolCallCounter
 from harness.budget.tracker import BudgetStatus, BudgetTracker
 from harness.campaign.runner import CampaignRunner
+from harness.campaign.think_tool import ThinkLog, make_think_tool
+from harness.campaign.validator import AgentValidator
 from harness.core.enums import AttackSurface
-from harness.core.schemas import ExplorationTask, ObjectiveScript, RunConfig, VesselCandidate
+from harness.core.schemas import (
+    AgenticCycleOutput,
+    ExplorationTask,
+    ObjectiveScript,
+    RunConfig,
+    SummarizedTrace,
+    TestSpec,
+    VesselCandidate,
+)
 from harness.explorer.explorer import Explorer
 from harness.explorer.summarizer import Summarizer
+from harness.explorer.surface_prompts import (
+    ATTACKER_SYSTEM_PROMPT,
+    EXPLORER_SYSTEM_PROMPT,
+    ORCHESTRATOR_SYSTEM_PROMPT,
+)
 from harness.grafter.grafter import Grafter
 from harness.grafter.surface_router import SurfaceCatalogRouter
 from harness.memory.strategic import StrategicMemory
@@ -18,6 +41,8 @@ from harness.memory.working import WorkingMemory
 from harness.objective_replay.replayer import MVP_GOALS, ObjectiveReplayer
 from harness.triage.bandit import SurfaceBandit
 from harness.victim.base import VictimAdapter
+
+logger = logging.getLogger("harness.campaign.muzzle_orchestrator")
 
 
 @dataclass
@@ -52,7 +77,8 @@ def make_victim_tools(victim: VictimAdapter, session_id: str):
         """List all documents currently available in the victim session."""
         try:
             return await victim.list_docs(session_id)
-        except Exception:
+        except Exception as exc:
+            logger.warning("list_docs_tool failed: %s", exc)
             return []
 
     @tool
@@ -88,8 +114,6 @@ def make_orchestration_tools(
     config: "RunConfig",
 ):
     """Build the 4 deterministic Python tools for the Orchestrator SubAgent."""
-    import json as _json
-
     try:
         from langchain_core.tools import tool
     except Exception:  # pragma: no cover - optional dependency
@@ -100,44 +124,38 @@ def make_orchestration_tools(
     def run_grafter_tool(surfaces_json: str) -> str:
         """Run the Grafter on a JSON list of SummarizedTrace dicts."""
         try:
-            raw = _json.loads(surfaces_json)
-            from harness.core.schemas import SummarizedTrace
+            raw = json.loads(surfaces_json)
             traces = [SummarizedTrace(**t) for t in (raw if isinstance(raw, list) else [raw])]
         except Exception as exc:
-            return _json.dumps({"error": str(exc)})
+            return json.dumps({"error": str(exc)})
         all_candidates = []
         for t in traces:
             all_candidates.extend(grafter.discover(t))
         ranked = grafter.rank(all_candidates)
-        return _json.dumps([c.model_dump() for c in ranked])
+        return json.dumps([c.model_dump() for c in ranked])
 
     @tool
     def distill_objective_tool(goal_id: str) -> str:
         """Run ObjectiveReplayer for a single goal_id and return ObjectiveScript JSON."""
-        import asyncio
-        from harness.objective_replay.replayer import MVP_GOALS
         goal = next((g for g in MVP_GOALS if g.goal_id == goal_id), None)
         if goal is None:
-            return _json.dumps({"error": f"unknown goal_id: {goal_id}"})
+            return json.dumps({"error": f"unknown goal_id: {goal_id}"})
         try:
             script = asyncio.get_event_loop().run_until_complete(
                 replayer.run_and_distill(goal, engagement_id=config.engagement_id or None)
             )
-            return _json.dumps(script.model_dump() if script else {})
+            return json.dumps(script.model_dump() if script else {})
         except Exception as exc:
-            return _json.dumps({"error": str(exc)})
+            return json.dumps({"error": str(exc)})
 
     @tool
     def build_suite_tool(candidates_json: str, objective_json: str) -> str:
         """Build a TestSpec suite from ranked candidates + objective script."""
-        import asyncio
         try:
-            from harness.core.schemas import ObjectiveScript, VesselCandidate
-            candidates = [VesselCandidate(**c) for c in _json.loads(candidates_json)]
-            objective = ObjectiveScript(**_json.loads(objective_json)) if objective_json.strip() != "{}" else None
+            candidates = [VesselCandidate(**c) for c in json.loads(candidates_json)]
+            objective = ObjectiveScript(**json.loads(objective_json)) if objective_json.strip() != "{}" else None
         except Exception as exc:
-            return _json.dumps({"error": str(exc)})
-        from harness.attack.synthesis.chain_strategy import ChainStrategy
+            return json.dumps({"error": str(exc)})
         chain_active = isinstance(runner.strategy, ChainStrategy)
         suite = grafter.build_suite(
             candidates,
@@ -145,32 +163,28 @@ def make_orchestration_tools(
             chain_strategy_active=chain_active,
             surface_router=surface_router,
         )
-        return _json.dumps([s.model_dump() for s in suite])
+        return json.dumps([s.model_dump() for s in suite])
 
     @tool
     def execute_test_spec_tool(spec_json: str) -> str:
         """Execute a single TestSpec against the victim and return JudgeResult JSON."""
-        import asyncio
         try:
-            from harness.core.schemas import TestSpec
-            spec = TestSpec(**_json.loads(spec_json))
+            spec = TestSpec(**json.loads(spec_json))
         except Exception as exc:
-            return _json.dumps({"error": str(exc)})
+            return json.dumps({"error": str(exc)})
         try:
             result = asyncio.get_event_loop().run_until_complete(
                 runner.run_one(spec)
             )
-            return _json.dumps(result.model_dump() if result else {})
+            return json.dumps(result.model_dump() if result else {})
         except Exception as exc:
-            return _json.dumps({"error": str(exc)})
+            return json.dumps({"error": str(exc)})
 
     return [run_grafter_tool, distill_objective_tool, build_suite_tool, execute_test_spec_tool]
 
 
 def make_memory_tools(wm: "WorkingMemory", sm: "StrategicMemory"):
     """Build 4 memory tools for the Orchestrator SubAgent."""
-    import json as _json
-
     try:
         from langchain_core.tools import tool
     except Exception:  # pragma: no cover - optional dependency
@@ -180,7 +194,7 @@ def make_memory_tools(wm: "WorkingMemory", sm: "StrategicMemory"):
     @tool
     def read_working_memory() -> str:
         """Read the current cycle's working memory scratchpad."""
-        return _json.dumps({
+        return json.dumps({
             "cycle": wm.cycle,
             "surfaces_discovered": wm.surfaces_discovered,
             "vessels_tried": len(wm.vessels_tried),
@@ -211,7 +225,7 @@ def make_memory_tools(wm: "WorkingMemory", sm: "StrategicMemory"):
             t: {"effectiveness": sm.technique_effectiveness(t), "attempts": st.attempts}
             for t, st in sm.technique_stats.items()
         }
-        return _json.dumps({
+        return json.dumps({
             "surface_stats": surface_info,
             "technique_stats": technique_info,
             "behavioral_patterns": sm.behavioral_patterns[-5:],
@@ -223,7 +237,6 @@ def make_memory_tools(wm: "WorkingMemory", sm: "StrategicMemory"):
 
 def _wrap_tool_with_counter(fn: Any, agent_name: str, counter: "ToolCallCounter"):
     """Wrap a tool function to count invocations and enforce budget."""
-    import functools
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
@@ -280,7 +293,6 @@ class MuzzleOrchestrator:
         self.bandit = SurfaceBandit.load(engagement) if engagement else SurfaceBandit()
 
         # Think log for structured reasoning capture
-        from harness.campaign.think_tool import ThinkLog
         self._think_log = ThinkLog(cycle=0)
 
         # Wire memory/bandit into grafter scoring
@@ -290,16 +302,14 @@ class MuzzleOrchestrator:
         self._orchestrator = self._build_orchestrator()
 
     def _load_surface_router(self, config: RunConfig) -> SurfaceCatalogRouter:
-        from harness.attack.catalog.loader import load_test_specs
-
         router = SurfaceCatalogRouter()
         for path_str, surface_str in config.surface_catalog_map.items():
             try:
                 surface = AttackSurface(surface_str)
                 _, specs = load_test_specs(path_str)
                 router.register(surface, specs)
-            except Exception:
-                pass  # Missing catalog is non-fatal
+            except Exception as exc:
+                logger.debug("Skipping catalog %s: %s", path_str, exc)
         return router
 
     def _make_llm(self, model_str: str):
@@ -309,11 +319,10 @@ class MuzzleOrchestrator:
         OpenRouter base_url. For provider-prefixed models (e.g. 'anthropic:...'),
         uses init_chat_model directly.
         """
-        import os as _os
-        api_key = _os.getenv(self.config.attacker_api_key_env, "").strip()
+        api_key = os.getenv(self.config.attacker_api_key_env, "").strip()
 
         if "/" in model_str and not model_str.startswith(("openai:", "anthropic:")):
-            from langchain_openai import ChatOpenAI
+            from langchain_openai import ChatOpenAI  # pragma: no cover - optional dependency
             return ChatOpenAI(
                 model=model_str,
                 base_url="https://openrouter.ai/api/v1",
@@ -321,32 +330,30 @@ class MuzzleOrchestrator:
                 max_tokens=4096,
             )
 
-        from langchain.chat_models import init_chat_model
+        from langchain.chat_models import init_chat_model  # pragma: no cover - optional dependency
         return init_chat_model(model_str)
 
     def _build_orchestrator(self):
         if not self.config.engagement_id:
             return None
 
-        import os as _os
-        api_key = _os.getenv(self.config.attacker_api_key_env, "").strip()
+        api_key = os.getenv(self.config.attacker_api_key_env, "").strip()
         if not api_key:
-            import warnings
             warnings.warn("No API key found — skipping agentic orchestrator, using scripted mode.")
             return None
 
         try:
-            from deepagents import SubAgent, create_deep_agent
-            from deepagents.backends.filesystem import FilesystemBackend
-        except Exception:
+            from deepagents import SubAgent, create_deep_agent  # pragma: no cover - optional dependency
+            from deepagents.backends.filesystem import FilesystemBackend  # pragma: no cover - optional dependency
+        except Exception as exc:
+            logger.warning("deepagents import failed, using scripted mode: %s", exc)
             return None
 
         # Build a temporary session_id for tool construction (Explorer reuses its own per task)
         session_id = f"orch-{self.config.engagement_id}"
         victim_tools = make_victim_tools(self.victim, session_id)
 
-        analyst_key = _os.getenv(self.config.analyst_api_key_env, "").strip() or api_key
-        from harness.objective_replay.replayer import ObjectiveReplayer
+        analyst_key = os.getenv(self.config.analyst_api_key_env, "").strip() or api_key
         replayer = ObjectiveReplayer(
             victim=self.victim,
             openrouter_api_key=analyst_key,
@@ -361,23 +368,20 @@ class MuzzleOrchestrator:
         )
         mem_tools = make_memory_tools(self.working_memory, self.strategic_memory)
 
-        # Think tool for structured reasoning
-        from harness.campaign.think_tool import make_think_tool
-        think_tool = make_think_tool(self._think_log, cycle=0, use_stream_writer=True)
+        # Think tool for structured reasoning — pass callables to avoid stale closure
+        think_tool = make_think_tool(
+            lambda: self._think_log,
+            get_cycle=lambda: self._think_log.cycle,
+            use_stream_writer=True,
+        )
 
         memory_dir = f"reports/{self.config.engagement_id}/memory/"
-        from harness.explorer.surface_prompts import (
-            ATTACKER_SYSTEM_PROMPT,
-            EXPLORER_SYSTEM_PROMPT,
-            ORCHESTRATOR_SYSTEM_PROMPT,
-        )
 
         try:
             llm = self._make_llm(self.config.attacker_model)
 
-            import os as _os2
-            _memory_root = _os2.path.abspath(memory_dir)
-            _os2.makedirs(_memory_root, exist_ok=True)
+            _memory_root = os.path.abspath(memory_dir)
+            os.makedirs(_memory_root, exist_ok=True)
             fs_backend = FilesystemBackend(root_dir=_memory_root, virtual_mode=False)
 
             # AGENTS.md in memory_dir is optional — graceful degradation if missing
@@ -415,7 +419,6 @@ class MuzzleOrchestrator:
                 ],
             )
         except Exception as exc:  # pragma: no cover
-            import warnings
             warnings.warn(f"_build_orchestrator failed: {exc}. Falling back to scripted mode.")
             return None
 
@@ -485,14 +488,11 @@ class MuzzleOrchestrator:
         on_result: Optional[Callable[[Any], None]],
         progress_fn: Callable[[str], None],
     ) -> MuzzleCycleResult:
-        import json as _json
-
         # Reset think_log for this cycle
-        from harness.campaign.think_tool import ThinkLog
         self._think_log = ThinkLog(cycle=cycle)
 
         progress_fn(f"[cycle {cycle}] Agentic mode: streaming Orchestrator SubAgent...")
-        tasks_json = _json.dumps([t.model_dump() for t in exploration_tasks])
+        tasks_json = json.dumps([t.model_dump() for t in exploration_tasks])
         input_dict = {
             "messages": [
                 {
@@ -508,7 +508,7 @@ class MuzzleOrchestrator:
             "engagement_id": self.config.engagement_id,
             "budget_state": self.budget_tracker.to_telemetry_dict(),
             "bandit_scores": self.bandit.scores(),
-            "strategic_memory": _json.dumps({
+            "strategic_memory": json.dumps({
                 s: self.strategic_memory.surface_win_rate(s)
                 for s in self.strategic_memory.surface_stats
             }),
@@ -572,7 +572,6 @@ class MuzzleOrchestrator:
                 f"specs_executed={vessels_grafted}, think_steps={len(self._think_log.steps)}"
             )
 
-            from harness.campaign.validator import AgentValidator
             validator = AgentValidator()
             report = validator.validate(
                 cycle=int(cycle),
@@ -603,16 +602,8 @@ class MuzzleOrchestrator:
                 exploration_tasks, cycle, on_result=on_result, progress_fn=progress_fn
             )
 
-    def _parse_agentic_output(self, raw: str, cycle: int) -> "AgenticCycleOutput":
+    def _parse_agentic_output(self, raw: str, cycle: int) -> AgenticCycleOutput:
         """Parse LLM output into AgenticCycleOutput with progressive fallbacks."""
-        import json as _json
-        import logging
-        import re
-
-        from harness.core.schemas import AgenticCycleOutput
-
-        logger = logging.getLogger(__name__)
-
         # Strip markdown code fences if present
         stripped = raw.strip()
         fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, re.DOTALL)
@@ -630,7 +621,7 @@ class MuzzleOrchestrator:
 
             # Path 2: json.loads + model_validate (handles partial/extra keys)
             try:
-                data = _json.loads(stripped)
+                data = json.loads(stripped)
                 result = AgenticCycleOutput.model_validate(data)
                 logger.info("[parse_agentic_output] Path 2: json.loads + model_validate succeeded")
                 return result
@@ -669,8 +660,6 @@ class MuzzleOrchestrator:
         progress_fn: Callable[[str], None],
     ) -> MuzzleCycleResult:
         """Procedural cycle with budget, memory, and bandit integration."""
-        import os as _os
-
         # Reset per-cycle state
         self.budget_tracker.reset_cycle()
         self.tool_counter.reset()
@@ -713,7 +702,7 @@ class MuzzleOrchestrator:
 
         # Budget check before ObjectiveReplayer
         attacker_budget = self.budget_tracker.check("attacker")
-        api_key = _os.getenv(self.config.analyst_api_key_env, "").strip()
+        api_key = os.getenv(self.config.analyst_api_key_env, "").strip()
         replayer = ObjectiveReplayer(
             victim=self.victim,
             openrouter_api_key=api_key,
@@ -784,7 +773,6 @@ class MuzzleOrchestrator:
 
         surfaces = sorted({c.vessel_kind.value for c in ranked})
 
-        from harness.campaign.validator import AgentValidator
         validator = AgentValidator()
         report = validator.validate(
             cycle=int(cycle),

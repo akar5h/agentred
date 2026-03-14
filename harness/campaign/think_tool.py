@@ -33,22 +33,47 @@ class ThinkLog:
 
 
 def make_think_tool(
-    think_log: ThinkLog,
-    cycle: int = 0,
+    get_think_log,
+    cycle=None,
     use_stream_writer: bool = True,
+    *,
+    get_cycle=None,
 ):
     """Factory that returns a LangChain @tool for structured reasoning.
 
     Parameters
     ----------
-    think_log : ThinkLog
-        Accumulator for this cycle's reasoning steps.
-    cycle : int
-        Current MUZZLE cycle number.
+    get_think_log : callable or ThinkLog
+        Either a zero-arg callable returning the current ThinkLog, or a
+        ThinkLog instance directly (for backward compat / tests).  Using a
+        callable avoids stale-closure bugs when MuzzleOrchestrator replaces
+        ``self._think_log`` each cycle.
+    cycle : int or None
+        Static cycle number (backward compat).  Prefer ``get_cycle``.
+    get_cycle : callable or None
+        Zero-arg callable returning the current cycle number.  Takes
+        precedence over ``cycle``.  Defaults to reading
+        ``think_log.cycle`` at call time.
     use_stream_writer : bool
         When True, attempts to emit via ``langgraph.config.get_stream_writer()``
         for real-time streaming.  Set False in unit tests.
     """
+    # Support both callables and direct objects for backward compat
+    if callable(get_think_log) and not isinstance(get_think_log, ThinkLog):
+        _resolve_log = get_think_log
+    else:
+        _log_ref = get_think_log
+        _resolve_log = lambda: _log_ref  # noqa: E731
+
+    # Resolve cycle: get_cycle (callable) > cycle (static int) > think_log.cycle
+    if get_cycle is not None and callable(get_cycle):
+        _resolve_cycle = get_cycle
+    elif cycle is not None:
+        _static_cycle = int(cycle)
+        _resolve_cycle = lambda: _static_cycle  # noqa: E731
+    else:
+        _resolve_cycle = lambda: _resolve_log().cycle  # noqa: E731
+
     try:
         from langchain_core.tools import tool as _lc_tool
     except Exception:  # pragma: no cover
@@ -65,14 +90,16 @@ def make_think_tool(
                      attack_planning, post_attack, hypothesis.
             decision: The decision you reached (if any).
         """
+        current_log = _resolve_log()
+        current_cycle = _resolve_cycle()
         step = ThinkStep(
             timestamp_iso=datetime.now(timezone.utc).isoformat(),
-            cycle=cycle,
+            cycle=current_cycle,
             reasoning=reasoning,
             context=context,
             decision=decision,
         )
-        think_log.add(step)
+        current_log.add(step)
 
         # Emit via LangGraph stream writer for real-time visibility
         if use_stream_writer:

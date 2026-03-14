@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("harness.oracle.pattern_oracle")
 
 from harness.core.enums import AttackSurface, OracleCode, Status
 from harness.core.schemas import JudgeResult, TargetProfile
@@ -45,7 +48,8 @@ def load_target_profile() -> TargetProfile:
 
     try:
         payload = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.debug("Failed to parse target profile %s: %s", path, exc)
         return TargetProfile()
     if not isinstance(payload, dict):
         return TargetProfile()
@@ -83,15 +87,15 @@ def _extract_json_candidates(text: str) -> list[Any]:
     if stripped and (stripped.startswith("{") or stripped.startswith("[")):
         try:
             out.append(json.loads(stripped))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("JSON candidate parse (whole text) failed: %s", exc)
 
     for match in re.finditer(r"```json\s*(.*?)\s*```", text, re.IGNORECASE | re.DOTALL):
         blob = match.group(1)
         try:
             out.append(json.loads(blob))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("JSON candidate parse (```json fence) failed: %s", exc)
 
     for match in re.finditer(r"```\s*(.*?)\s*```", text, re.DOTALL):
         blob = match.group(1)
@@ -99,15 +103,15 @@ def _extract_json_candidates(text: str) -> list[Any]:
             blob = blob.strip()[4:].strip()
         try:
             out.append(json.loads(blob))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("JSON candidate parse (``` fence) failed: %s", exc)
 
     for match in re.finditer(r"\{[\s\S]{20,}\}", text):
         blob = match.group(0)
         try:
             out.append(json.loads(blob))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("JSON candidate parse (brace extraction) failed: %s", exc)
 
     return out
 
@@ -115,7 +119,8 @@ def _extract_json_candidates(text: str) -> list[Any]:
 def _to_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
-    except Exception:
+    except Exception as exc:
+        logger.debug("_to_int conversion failed for %r: %s", value, exc)
         return default
 
 
@@ -399,7 +404,8 @@ class PatternOracle(Oracle):
         raw_status = raw.get("status", Status.BLOCKED.value)
         try:
             status = Status(raw_status)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Invalid status %r, defaulting to BLOCKED: %s", raw_status, exc)
             status = Status.BLOCKED
 
         responses = observation.get("responses", []) if isinstance(observation.get("responses"), list) else []
@@ -411,7 +417,8 @@ class PatternOracle(Oracle):
         if isinstance(attack_surface, str):
             try:
                 attack_surface = AttackSurface(attack_surface)
-            except Exception:
+            except Exception as exc:
+                logger.debug("Invalid attack_surface %r: %s", attack_surface, exc)
                 attack_surface = None
 
         return JudgeResult(

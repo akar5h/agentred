@@ -90,3 +90,29 @@ class TestToolCallCounter:
     def test_warning_message_ok(self):
         tc = ToolCallCounter(limits={"explorer": 10})
         assert tc.warning_message("explorer") == ""
+
+
+class TestToolCallCounterLenient:
+    def test_lenient_increment_unknown_returns_ok(self):
+        tc = ToolCallCounter(limits={"explorer": 10}, strict=False)
+        status = tc.increment("unknown_agent")
+        assert status == ToolBudgetStatus.OK
+
+    def test_lenient_check_unknown_returns_ok(self):
+        tc = ToolCallCounter(limits={"explorer": 10}, strict=False)
+        assert tc.check("unknown_agent") == ToolBudgetStatus.OK
+
+    def test_lenient_remaining_unknown_returns_zero(self):
+        tc = ToolCallCounter(limits={"explorer": 10}, strict=False)
+        assert tc.remaining("unknown_agent") == 0
+
+    def test_lenient_known_agent_still_works(self):
+        tc = ToolCallCounter(limits={"explorer": 5}, strict=False)
+        for _ in range(5):
+            tc.increment("explorer")
+        assert tc.check("explorer") == ToolBudgetStatus.EXHAUSTED
+
+    def test_strict_default_raises(self):
+        tc = ToolCallCounter(limits={"explorer": 10})
+        with pytest.raises(KeyError, match="Unknown agent"):
+            tc.increment("unknown_agent")
