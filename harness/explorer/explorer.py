@@ -41,7 +41,7 @@ class Explorer:
 
     async def run_task(self, task: ExplorationTask) -> ExplorationTrace:
         session_id = f"explore-{task.task_id}-{uuid4().hex[:8]}"
-        await self.victim.reset_session(session_id)
+        await self.victim.reset_session(session_id, timeout=self.timeout_seconds)
 
         steps: list[TraceStep] = []
         for turn_index, message in enumerate(task.turns):
@@ -88,6 +88,12 @@ class Explorer:
                     tool_calls_after = await self.victim.get_tool_calls(session_id, timeout=self.timeout_seconds)
                 except Exception as exc:
                     logger.debug("get_tool_calls (after) failed: %s", exc)
+
+            # Fallback: if adapter doesn't have get_tool_calls(), use tool_calls from send_turn response
+            if not tool_calls_after and isinstance(response_data, dict):
+                resp_tc = response_data.get("tool_calls", [])
+                if isinstance(resp_tc, list) and resp_tc:
+                    tool_calls_after = resp_tc
 
             memory_after: list[dict] = []
             if hasattr(self.victim, "get_memories"):

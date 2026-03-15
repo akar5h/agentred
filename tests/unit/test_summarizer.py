@@ -263,6 +263,65 @@ def test_summarizer_classifies_guardrail_block() -> None:
     assert "chat_direct" in out.inferred_surfaces
 
 
+def test_summarizer_all_signals_preserves_multi_signal_steps() -> None:
+    """A step with multiple inferred_actions should have all of them in
+    all_signals, and all should map to inferred_surfaces."""
+    trace = ExplorationTrace(
+        task_id="t-multi",
+        session_id="s-multi",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I used tools, called APIs, and delegated to sub-agents",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=[
+                    "tool_enumerated",
+                    "external_api_hint",
+                    "subagent_hint",
+                    "memory_state_hint",
+                ],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    # step_type is the priority winner (tool_enumerated wins)
+    assert out.steps[0].step_type == "tool_enumerated"
+    # all_signals preserves every signal
+    assert set(out.steps[0].all_signals) == {
+        "tool_enumerated",
+        "external_api_hint",
+        "subagent_hint",
+        "memory_state_hint",
+    }
+    # _infer_surfaces should see all signals, not just step_type
+    assert "tool_calling" in out.inferred_surfaces
+    assert "external_api" in out.inferred_surfaces
+    assert "subagent_spawn" in out.inferred_surfaces
+    assert "memory_state" in out.inferred_surfaces
+
+
+def test_summarizer_classifies_memory_state_hint() -> None:
+    trace = ExplorationTrace(
+        task_id="t-ms",
+        session_id="s-ms",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I store conversation context in memory",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["memory_state_hint"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "memory_state_hint"
+    assert "memory_state" in out.inferred_surfaces
+
+
 def test_summarizer_deduplicates_surfaces() -> None:
     """Both structural tool_invoked and text-based tool_enumerated should emit
     tool_calling only once."""

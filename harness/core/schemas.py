@@ -172,6 +172,7 @@ class ExplorationTrace(_HarnessBaseModel):
 
 class ExecutionStep(_HarnessBaseModel):
     step_type: str
+    all_signals: list[str] = Field(default_factory=list)
     artifact_ref: Optional[str] = None
     content_preview: str = ""
     turn_index: int = 0

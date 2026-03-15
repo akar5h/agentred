@@ -406,3 +406,33 @@ async def test_explorer_classifier_refusal_adds_guardrail_block() -> None:
 
     trace = await explorer.run_task(task)
     assert "guardrail_block" in trace.steps[0].inferred_actions
+
+
+# ---------------------------------------------------------------------------
+# tool_calls fallback from send_turn response → tool_calls_after
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_calls_from_send_turn_populate_tool_calls_after() -> None:
+    """When send_turn returns tool_calls and adapter lacks get_tool_calls(),
+    the fallback should populate TraceStep.tool_calls_after."""
+
+    class ToolCallResponseVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {
+                "response": "I used parse_resume to analyze the file.",
+                "usage": {},
+                "tool_calls": [{"id": "tc1", "name": "parse_resume"}],
+            }
+
+    victim = ToolCallResponseVictim([])
+    # FakeVictim has no get_tool_calls — so the fallback path fires
+    assert not hasattr(victim, "get_tool_calls")
+
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-fallback-tc", description="fallback tc", turns=["analyze"])
+
+    trace = await explorer.run_task(task)
+    assert trace.steps[0].tool_calls_after == [{"id": "tc1", "name": "parse_resume"}]

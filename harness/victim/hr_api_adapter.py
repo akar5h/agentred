@@ -32,6 +32,7 @@ class HrApiAdapter(VictimAdapter):
         self._client = client
         self._session_map: dict[str, str] = {}
         self._upload_log: list[dict] = []
+        self._debug_unavailable: bool = False
 
     async def _request(
         self,
@@ -123,6 +124,18 @@ class HrApiAdapter(VictimAdapter):
             timeout=timeout,
             json={"message": message, "client_id": self.client_id},
         )
+        # Session expired on the server — recreate and retry once
+        if resp.status_code == 404:
+            logger.debug("Session %s expired (404), recreating", server_id)
+            new_server_id = await self._create_server_session(timeout=timeout)
+            self._session_map[session_id] = new_server_id
+            started = time.monotonic()
+            resp = await self._request(
+                "POST",
+                f"/sessions/{new_server_id}/chat",
+                timeout=timeout,
+                json={"message": message, "client_id": self.client_id},
+            )
         duration_ms = int((time.monotonic() - started) * 1000)
         if resp.status_code >= 400:
             raise InfraError(f"send_turn failed: {resp.status_code} {resp.text}")
@@ -239,6 +252,43 @@ class HrApiAdapter(VictimAdapter):
         if resp.status_code >= 400:
             raise InfraError(f"list_positions failed: {resp.status_code}")
         return resp.json() if resp.content else {}
+
+    async def get_memories(self, *, limit: int = 20, timeout: float = 30.0) -> list[dict]:
+        """Use /history/queries as a memory/state proxy.
+
+        New query history entries appearing after a turn = structural evidence
+        of state persistence, which feeds the Summarizer's memory_write check.
+        """
+        resp = await self._request("GET", "/history/queries", timeout=timeout)
+        if resp.status_code >= 400:
+            return []
+        payload = resp.json() if resp.content else {}
+        if isinstance(payload, dict):
+            return payload.get("entries", payload.get("queries", []))[:limit]
+        if isinstance(payload, list):
+            return payload[:limit]
+        return []
+
+    async def get_debug_state(self, session_id: str, *, timeout: float = 30.0) -> dict:
+        """Attempt GET /debug/{session_id} — returns {} if endpoint doesn't exist.
+
+        Caches 404/405 results to avoid repeated failed requests.
+        """
+        if self._debug_unavailable:
+            return {}
+        server_id = self._session_map.get(session_id, session_id)
+        try:
+            resp = await self._request("GET", f"/debug/{server_id}", timeout=timeout)
+        except InfraError:
+            self._debug_unavailable = True
+            return {}
+        if resp.status_code in (404, 405):
+            self._debug_unavailable = True
+            return {}
+        if resp.status_code >= 400:
+            return {}
+        payload = resp.json() if resp.content else {}
+        return payload if isinstance(payload, dict) else {}
 
     async def get_query_history(self, *, timeout: float = 10.0) -> dict:
         resp = await self._request("GET", "/history/queries", timeout=timeout)

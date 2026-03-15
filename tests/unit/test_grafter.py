@@ -17,8 +17,8 @@ def _trace(*steps: ExecutionStep) -> SummarizedTrace:
     return SummarizedTrace(trace_id="t1", steps=list(steps), inferred_surfaces=[])
 
 
-def _step(step_type: str, turn_index: int, preview: str = "") -> ExecutionStep:
-    return ExecutionStep(step_type=step_type, artifact_ref=None, content_preview=preview, turn_index=turn_index)
+def _step(step_type: str, turn_index: int, preview: str = "", all_signals: list[str] | None = None) -> ExecutionStep:
+    return ExecutionStep(step_type=step_type, all_signals=all_signals or [], artifact_ref=None, content_preview=preview, turn_index=turn_index)
 
 
 def test_discover_upload_creates_uploaded_document_candidate() -> None:
@@ -153,3 +153,55 @@ def test_match_catalog_applies_memory_boost() -> None:
         ],
     )
     assert with_mem.match_confidence["DCI-01"] > no_mem.match_confidence["DCI-01"]
+
+
+def test_discover_generates_candidates_from_all_signals_hints() -> None:
+    """Hint signals in all_signals (not matching step_type) should produce
+    additional VesselCandidates."""
+    grafter = Grafter(top_k=10)
+    step = _step(
+        "tool_enumerated",
+        turn_index=0,
+        preview="tools and APIs",
+        all_signals=["tool_enumerated", "external_api_hint", "subagent_hint", "memory_state_hint"],
+    )
+    candidates = grafter.discover(_trace(step))
+
+    # step_type=tool_enumerated doesn't match the if/elif chain, so no
+    # structural candidate — but all_signals hints should generate 3 candidates
+    # (external_api_hint, subagent_hint, memory_state_hint; tool_enumerated
+    # is skipped because it equals step_type)
+    hint_methods = {c.exploit_method for c in candidates}
+    assert "external_api_response_poisoning" in hint_methods
+    assert "subagent_prompt_injection" in hint_methods
+    assert "memory_poisoning" in hint_methods
+
+    # Verify saliency scores are the hint-level values (lower than structural)
+    api_candidate = next(c for c in candidates if c.exploit_method == "external_api_response_poisoning")
+    assert api_candidate.saliency_score == 0.6
+    subagent_candidate = next(c for c in candidates if c.exploit_method == "subagent_prompt_injection")
+    assert subagent_candidate.saliency_score == 0.7
+    memory_candidate = next(c for c in candidates if c.exploit_method == "memory_poisoning")
+    assert memory_candidate.saliency_score == 0.55
+
+
+def test_discover_avoids_duplicate_from_step_type_and_hint() -> None:
+    """When step_type matches a hint_map key, it should NOT be duplicated
+    via the all_signals pass."""
+    grafter = Grafter(top_k=10)
+    # subagent_invoked is handled by the if/elif chain; subagent_hint in
+    # all_signals should be skipped since it != step_type (subagent_invoked)
+    # but subagent_hint IS different from subagent_invoked, so it generates.
+    # Test the case where step_type IS in hint_map:
+    step = _step(
+        "tool_enumerated",
+        turn_index=0,
+        preview="tools",
+        all_signals=["tool_enumerated"],
+    )
+    candidates = grafter.discover(_trace(step))
+    # tool_enumerated is not in the if/elif chain for step_type, so no
+    # structural candidate. The hint pass skips it because signal == step_type.
+    # Result: no candidates from this step.
+    tool_schema_injection = [c for c in candidates if c.exploit_method == "tool_schema_injection"]
+    assert len(tool_schema_injection) == 0

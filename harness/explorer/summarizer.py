@@ -30,9 +30,13 @@ class Summarizer:
         after_ids.discard("")
         new_docs = after_ids - before_ids
 
+        # Collect all signals from inferred_actions for downstream consumers
+        all_signals = list(step.inferred_actions)
+
         if "file_upload" in step.inferred_actions:
             return ExecutionStep(
                 step_type="file_upload",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -43,6 +47,7 @@ class Summarizer:
             artifact = sorted(new_docs)[0]
             return ExecutionStep(
                 step_type="doc_created",
+                all_signals=all_signals,
                 artifact_ref=artifact,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -51,6 +56,7 @@ class Summarizer:
         if "doc_read_hint" in step.inferred_actions:
             return ExecutionStep(
                 step_type="doc_read_hint",
+                all_signals=all_signals,
                 artifact_ref=self._extract_doc_ref(step.response, step.docs_before),
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -59,6 +65,7 @@ class Summarizer:
         if len(after_ids) != len(before_ids):
             return ExecutionStep(
                 step_type="state_change",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -70,6 +77,7 @@ class Summarizer:
         if tc_after_ids - tc_before_ids:
             return ExecutionStep(
                 step_type="tool_invoked",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -79,6 +87,7 @@ class Summarizer:
         if len(step.memory_after or []) > len(step.memory_before or []):
             return ExecutionStep(
                 step_type="memory_write",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -92,6 +101,7 @@ class Summarizer:
         if len(after_subagents) > len(before_subagents):
             return ExecutionStep(
                 step_type="subagent_invoked",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -103,6 +113,7 @@ class Summarizer:
         if len(after_ext) > len(before_ext):
             return ExecutionStep(
                 step_type="external_api_called",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -114,6 +125,7 @@ class Summarizer:
         if after_schemas and after_schemas != before_schemas:
             return ExecutionStep(
                 step_type="tool_schema_probed",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -124,6 +136,7 @@ class Summarizer:
         if "tool_enumerated" in step.inferred_actions:
             return ExecutionStep(
                 step_type="tool_enumerated",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -132,6 +145,7 @@ class Summarizer:
         if "tool_invoked" in step.inferred_actions:
             return ExecutionStep(
                 step_type="tool_invoked",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -140,6 +154,7 @@ class Summarizer:
         if "file_processing_hint" in step.inferred_actions:
             return ExecutionStep(
                 step_type="file_processing_hint",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -148,6 +163,7 @@ class Summarizer:
         if "external_api_hint" in step.inferred_actions:
             return ExecutionStep(
                 step_type="external_api_hint",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -156,6 +172,16 @@ class Summarizer:
         if "subagent_hint" in step.inferred_actions:
             return ExecutionStep(
                 step_type="subagent_hint",
+                all_signals=all_signals,
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        if "memory_state_hint" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="memory_state_hint",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -164,6 +190,7 @@ class Summarizer:
         if "guardrail_block" in step.inferred_actions:
             return ExecutionStep(
                 step_type="guardrail_block",
+                all_signals=all_signals,
                 artifact_ref=None,
                 content_preview=step.response[:200],
                 turn_index=step.turn_index,
@@ -171,13 +198,19 @@ class Summarizer:
 
         return ExecutionStep(
             step_type="chat_turn",
+            all_signals=all_signals,
             artifact_ref=None,
             content_preview=step.response[:200],
             turn_index=step.turn_index,
         )
 
     def _infer_surfaces(self, steps: list[ExecutionStep]) -> list[str]:
-        kinds = {s.step_type for s in steps}
+        # Collect step_types AND all_signals — full visibility
+        kinds: set[str] = set()
+        for s in steps:
+            kinds.add(s.step_type)
+            kinds.update(s.all_signals)
+
         surfaces: set[str] = set()
         if "file_upload" in kinds or "file_processing_hint" in kinds:
             surfaces.add("file_upload")
@@ -197,6 +230,8 @@ class Summarizer:
             surfaces.add("external_api")
         if "tool_schema_probed" in kinds:
             surfaces.add("tool_schema")
+        if "memory_state_hint" in kinds:
+            surfaces.add("memory_state")
         return sorted(surfaces)
 
     def _extract_doc_ref(self, response: str, docs: list[dict]) -> str | None:
