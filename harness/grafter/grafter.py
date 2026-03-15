@@ -90,6 +90,25 @@ class Grafter:
                     saliency_score=0.75,
                 ))
 
+            # Second pass: generate candidates from hint signals in all_signals
+            hint_map = {
+                "tool_enumerated": (VesselKind.TOOL_OUTPUT, "tool_call_args", "tool_schema_injection", 0.65),
+                "file_processing_hint": (VesselKind.UPLOADED_DOCUMENT, "file_content", "file_upload_injection", 0.6),
+                "external_api_hint": (VesselKind.TOOL_OUTPUT, "api_response_body", "external_api_response_poisoning", 0.6),
+                "subagent_hint": (VesselKind.SUBAGENT_OUTPUT, "subagent_input", "subagent_prompt_injection", 0.7),
+                "memory_state_hint": (VesselKind.MEMORY_ENTRY, "memory_content", "memory_poisoning", 0.55),
+            }
+            for signal in step.all_signals:
+                if signal in hint_map and signal != step.step_type:
+                    kind, field, method, saliency = hint_map[signal]
+                    candidates.append(VesselCandidate(
+                        vessel_kind=kind,
+                        delivery_field=field,
+                        exploit_method=method,
+                        source_step_index=step.turn_index,
+                        saliency_score=saliency,
+                    ))
+
         discovered = []
         for c in candidates:
             scored = self._score(
