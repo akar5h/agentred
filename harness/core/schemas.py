@@ -265,3 +265,24 @@ class AgenticCycleOutput(_HarnessBaseModel):
     specs_executed: int = 0
     hits: list[dict] = Field(default_factory=list)
     error: str = ""
+
+
+# ---------------------------------------------------------------------------
+# LLM Response Classifier schemas
+# ---------------------------------------------------------------------------
+
+
+class SurfaceSignal(_HarnessBaseModel):
+    """A single attack-surface signal detected in a target response."""
+    surface: str               # "tool_calling", "file_upload", etc.
+    confidence: float = 0.0
+    evidence: str = ""
+
+
+class ClassificationResult(_HarnessBaseModel):
+    """Output of LlmResponseClassifier.classify()."""
+    surfaces: list[SurfaceSignal] = Field(default_factory=list)
+    tool_names: list[str] = Field(default_factory=list)
+    is_refusal: bool = False
+    refusal_type: str = "none"   # "hard" | "soft" | "none"
+    raw_llm_response: dict = Field(default_factory=dict)

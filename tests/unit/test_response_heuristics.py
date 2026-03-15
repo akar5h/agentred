@@ -24,6 +24,15 @@ class TestIsRefusal:
         assert is_refusal("I must refuse to do that.")
         assert is_refusal("I'm not able to do that.")
 
+    def test_detects_hr_ai_refusal_patterns(self) -> None:
+        """HR AI uses conversational refusals that previous markers missed."""
+        assert is_refusal("I'm sorry, but I can't process that request.")
+        assert is_refusal("I cannot process your request at this time.")
+        assert is_refusal("I can't complete that action.")
+        assert is_refusal("I cannot share that information.")
+        assert is_refusal("I'm not permitted to access those records.")
+        assert is_refusal("I can't assist with that kind of request.")
+
     def test_negative_cases(self) -> None:
         assert not is_refusal("Sure, here are the tools I have:")
         assert not is_refusal("I can help you with that!")

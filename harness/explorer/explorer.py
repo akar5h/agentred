@@ -11,13 +11,10 @@ logger = logging.getLogger("harness.explorer")
 from harness.core.exceptions import InfraError
 from harness.core.response_heuristics import (
     extract_snake_case_names,
-    has_external_api_signal,
-    has_file_processing_signal,
-    has_schema_keywords,
-    has_subagent_signal,
     is_refusal,
 )
 from harness.core.schemas import ExplorationTask, ExplorationTrace, FindingMemory, TraceStep
+from harness.explorer.llm_classifier import LlmResponseClassifier
 from harness.victim.base import VictimAdapter
 
 
@@ -32,9 +29,15 @@ def _doc_identifier(doc: dict) -> str:
 
 
 class Explorer:
-    def __init__(self, victim: VictimAdapter, timeout_seconds: float = 120.0):
+    def __init__(
+        self,
+        victim: VictimAdapter,
+        timeout_seconds: float = 120.0,
+        classifier: LlmResponseClassifier | None = None,
+    ):
         self.victim = victim
         self.timeout_seconds = float(timeout_seconds)
+        self.classifier = classifier or LlmResponseClassifier()
 
     async def run_task(self, task: ExplorationTask) -> ExplorationTrace:
         session_id = f"explore-{task.task_id}-{uuid4().hex[:8]}"
@@ -107,7 +110,7 @@ class Explorer:
                 docs_before=docs_before if isinstance(docs_before, list) else [],
                 docs_after=docs_after if isinstance(docs_after, list) else [],
                 duration_ms=max(0, duration_ms),
-                inferred_actions=self._infer_actions(
+                inferred_actions=await self._infer_actions(
                     message=message,
                     response_data=response_data if isinstance(response_data, dict) else {},
                     docs_before=docs_before if isinstance(docs_before, list) else [],
@@ -500,14 +503,13 @@ class Explorer:
 
         return tasks[:max_probes]
 
-    def _infer_actions(
+    async def _infer_actions(
         self,
         message: str,
         response_data: dict,
         docs_before: list[dict],
         docs_after: list[dict],
     ) -> list[str]:
-        del message
         response_text = str(response_data.get("response", ""))
         before_ids = {_doc_identifier(d) for d in docs_before}
         after_ids = {_doc_identifier(d) for d in docs_after}
@@ -516,7 +518,7 @@ class Explorer:
 
         inferred_actions: list[str] = []
 
-        # --- existing doc-delta checks ---
+        # --- Structural checks (cheap, always reliable) ---
         if after_ids - before_ids:
             inferred_actions.append("doc_created")
 
@@ -527,32 +529,33 @@ class Explorer:
                 inferred_actions.append("doc_read_hint")
                 break
 
-        # --- NEW: response-data analysis ---
-
-        # 1. tool_calls present in response_data (structural signal)
+        # tool_calls present in response_data (structural signal)
         resp_tool_calls = response_data.get("tool_calls", [])
         if isinstance(resp_tool_calls, list) and resp_tool_calls:
             inferred_actions.append("tool_invoked")
 
-        # 2. Tool enumeration in response text (>=3 snake_case + schema keyword)
-        snake_names = extract_snake_case_names(response_text)
-        if len(snake_names) >= 3 and has_schema_keywords(response_text):
-            inferred_actions.append("tool_enumerated")
+        # --- LLM classification (replaces regex heuristics) ---
+        if response_text and not response_text.startswith("[INFRA_ERROR]"):
+            result = await self.classifier.classify(
+                response_text, probe_context=message,
+            )
 
-        # 3. File/document processing mentioned
-        if has_file_processing_signal(response_text):
-            inferred_actions.append("file_processing_hint")
+            action_map = {
+                "tool_calling": "tool_enumerated",
+                "file_upload": "file_processing_hint",
+                "external_api": "external_api_hint",
+                "subagent_spawn": "subagent_hint",
+                "memory_state": "memory_state_hint",
+                "guardrail_block": "guardrail_block",
+            }
 
-        # 4. External API / URL mentioned
-        if has_external_api_signal(response_text):
-            inferred_actions.append("external_api_hint")
+            for signal in result.surfaces:
+                if signal.confidence >= 0.6:
+                    action = action_map.get(signal.surface)
+                    if action and action not in inferred_actions:
+                        inferred_actions.append(action)
 
-        # 5. Subagent / delegation mentioned
-        if has_subagent_signal(response_text):
-            inferred_actions.append("subagent_hint")
-
-        # 6. Refusal / guardrail detected
-        if is_refusal(response_text):
-            inferred_actions.append("guardrail_block")
+            if result.is_refusal and "guardrail_block" not in inferred_actions:
+                inferred_actions.append("guardrail_block")
 
         return inferred_actions

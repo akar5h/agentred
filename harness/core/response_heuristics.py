@@ -40,6 +40,21 @@ REFUSAL_MARKERS = (
     "i am not able to",
     "not allowed to",
     "i'm unable to",
+    # HR AI / conversational refusal patterns
+    "can't process",
+    "cannot process",
+    "can't complete",
+    "cannot complete",
+    "can't fulfill",
+    "cannot fulfill",
+    "can't do that",
+    "i'm sorry, but i can't",
+    "i cannot share",
+    "cannot share that",
+    "i'm not permitted",
+    "not permitted to",
+    "i can't assist with",
+    "cannot assist with",
 )
 
 SCHEMA_KEYWORDS = (
