@@ -34,4 +34,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
   "integration: integration-level tests",
+  "e2e: end-to-end tests against a live target",
 ]
