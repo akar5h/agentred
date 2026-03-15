@@ -31,6 +31,7 @@ class HrApiAdapter(VictimAdapter):
         self.client_id = client_id
         self._client = client
         self._session_map: dict[str, str] = {}
+        self._upload_log: list[dict] = []
 
     async def _request(
         self,
@@ -95,6 +96,11 @@ class HrApiAdapter(VictimAdapter):
         old_server_id = self._session_map.pop(session_id, None)
         if old_server_id:
             await self._delete_server_session(old_server_id, timeout=timeout)
+        # Clear upload log entries for this session
+        self._upload_log = [
+            entry for entry in self._upload_log
+            if entry.get("session_id") != session_id
+        ]
         try:
             new_server_id = await self._create_server_session(timeout=timeout)
         except InfraError as exc:
@@ -145,7 +151,14 @@ class HrApiAdapter(VictimAdapter):
         )
         if resp.status_code >= 400:
             raise InfraError(f"upload_file failed: {resp.status_code} {resp.text}")
-        return resp.json() if resp.content else {}
+        result = resp.json() if resp.content else {}
+        # Track upload locally so list_docs() can see it
+        self._upload_log.append({
+            "filename": filename,
+            "session_id": session_id,
+            "source": "upload_file",
+        })
+        return result
 
     async def list_docs(
         self,
@@ -159,8 +172,22 @@ class HrApiAdapter(VictimAdapter):
         payload = resp.json() if resp.content else {}
         # Response is {"total": N, "entries": [...]}
         if isinstance(payload, dict):
-            return payload.get("entries", [])
-        return payload if isinstance(payload, list) else []
+            entries = payload.get("entries", [])
+        elif isinstance(payload, list):
+            entries = payload
+        else:
+            entries = []
+
+        # Merge locally-tracked uploads (dedupe by filename)
+        seen_filenames = {
+            e.get("filename") for e in entries
+            if isinstance(e, dict) and e.get("filename")
+        }
+        for upload in self._upload_log:
+            if upload["filename"] not in seen_filenames:
+                entries.append({"filename": upload["filename"], "source": "upload_file"})
+                seen_filenames.add(upload["filename"])
+        return entries
 
     # ------------------------------------------------------------------
     # Extra methods (beyond VictimAdapter ABC)

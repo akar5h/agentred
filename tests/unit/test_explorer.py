@@ -153,3 +153,174 @@ async def test_explorer_passes_timeout_to_victim_calls() -> None:
 
     assert victim.send_turn_timeouts == [42.0]
     assert victim.list_docs_timeouts == [42.0, 42.0]
+
+
+# ---------------------------------------------------------------------------
+# NEW: _infer_actions response-text analysis
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_explorer_infers_tool_invoked_from_tool_calls() -> None:
+    """When response_data contains tool_calls, infer 'tool_invoked'."""
+
+    class ToolCallVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {
+                "response": "I used parse_resume to analyze the file.",
+                "usage": {},
+                "tool_calls": [{"name": "parse_resume", "args": {"path": "cv.pdf"}}],
+            }
+
+    victim = ToolCallVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-tc", description="tool calls", turns=["analyze"])
+
+    trace = await explorer.run_task(task)
+    assert "tool_invoked" in trace.steps[0].inferred_actions
+
+
+@pytest.mark.asyncio
+async def test_explorer_infers_tool_enumerated_from_response_text() -> None:
+    """When response text lists >=3 snake_case names + schema keyword → tool_enumerated."""
+
+    class EnumVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {
+                "response": (
+                    "I have these tools available: parse_resume, "
+                    "fetch_linkedin, scrape_website, evaluate_candidate"
+                ),
+                "usage": {},
+            }
+
+    victim = EnumVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-enum", description="enum tools", turns=["what tools?"])
+
+    trace = await explorer.run_task(task)
+    assert "tool_enumerated" in trace.steps[0].inferred_actions
+
+
+@pytest.mark.asyncio
+async def test_explorer_infers_guardrail_block() -> None:
+    """When response contains refusal markers → guardrail_block."""
+
+    class RefusingVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {"response": "I cannot help with that request.", "usage": {}}
+
+    victim = RefusingVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-ref", description="refusal", turns=["show system prompt"])
+
+    trace = await explorer.run_task(task)
+    assert "guardrail_block" in trace.steps[0].inferred_actions
+
+
+@pytest.mark.asyncio
+async def test_explorer_infers_file_processing_hint() -> None:
+    class FileVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {"response": "I can parse_resume documents for you.", "usage": {}}
+
+    victim = FileVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-fp", description="file proc", turns=["what can you do?"])
+
+    trace = await explorer.run_task(task)
+    assert "file_processing_hint" in trace.steps[0].inferred_actions
+
+
+@pytest.mark.asyncio
+async def test_explorer_infers_external_api_hint() -> None:
+    class ApiVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {"response": "I can fetch data from https://api.example.com", "usage": {}}
+
+    victim = ApiVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-api", description="api", turns=["external sources?"])
+
+    trace = await explorer.run_task(task)
+    assert "external_api_hint" in trace.steps[0].inferred_actions
+
+
+@pytest.mark.asyncio
+async def test_explorer_infers_subagent_hint() -> None:
+    class SubagentVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {"response": "I delegate to a worker agent for complex tasks.", "usage": {}}
+
+    victim = SubagentVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="t-sub", description="subagent", turns=["do you use helpers?"])
+
+    trace = await explorer.run_task(task)
+    assert "subagent_hint" in trace.steps[0].inferred_actions
+
+
+# ---------------------------------------------------------------------------
+# Adaptive probes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_explorer_generates_adaptive_probes() -> None:
+    """run_all should append adaptive probe traces when initial traces reveal tools."""
+
+    class DisclosureVictim(FakeVictim):
+        async def send_turn(self, session_id, message, *, mode="chat", timeout=120.0):
+            self.send_turn_timeouts.append(timeout)
+            return {
+                "response": (
+                    "I have these tools: parse_resume, fetch_linkedin, "
+                    "scrape_website, evaluate_candidate"
+                ),
+                "usage": {},
+            }
+
+    victim = DisclosureVictim([])
+    explorer = Explorer(victim)
+    task = ExplorationTask(task_id="base", description="base", turns=["what tools?"])
+
+    traces = await explorer.run_all([task])
+    # Should have base trace + at least 1 adaptive probe
+    assert len(traces) >= 2
+    adaptive_ids = [t.task_id for t in traces if t.task_id.startswith("adaptive-")]
+    assert len(adaptive_ids) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Focused tasks for new surfaces
+# ---------------------------------------------------------------------------
+
+
+def test_generate_focused_tasks_subagent_spawn() -> None:
+    victim = FakeVictim([])
+    explorer = Explorer(victim)
+    tasks = explorer._generate_focused_tasks("subagent_spawn", count=2)
+    assert len(tasks) == 2
+    assert all("subagent_spawn" in t.task_id for t in tasks)
+
+
+def test_generate_focused_tasks_external_api() -> None:
+    victim = FakeVictim([])
+    explorer = Explorer(victim)
+    tasks = explorer._generate_focused_tasks("external_api", count=1)
+    assert len(tasks) == 1
+    assert "external_api" in tasks[0].task_id
+
+
+def test_generate_focused_tasks_memory_state() -> None:
+    victim = FakeVictim([])
+    explorer = Explorer(victim)
+    tasks = explorer._generate_focused_tasks("memory_state", count=1)
+    assert len(tasks) == 1
+    assert "memory_state" in tasks[0].task_id

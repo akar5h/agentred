@@ -136,3 +136,156 @@ def test_summarizer_infers_surfaces_from_step_types() -> None:
     assert "doc_memory" in out.inferred_surfaces
     assert "chat_direct" in out.inferred_surfaces
     assert "state_unknown_write" in out.inferred_surfaces
+
+
+# ---------------------------------------------------------------------------
+# NEW: text-derived step types
+# ---------------------------------------------------------------------------
+
+
+def test_summarizer_classifies_tool_enumerated() -> None:
+    trace = ExplorationTrace(
+        task_id="t-te",
+        session_id="s-te",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I have parse_resume, fetch_linkedin, scrape_website tools",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["tool_enumerated"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "tool_enumerated"
+    assert "tool_calling" in out.inferred_surfaces
+
+
+def test_summarizer_classifies_tool_invoked_from_inferred() -> None:
+    trace = ExplorationTrace(
+        task_id="t-ti",
+        session_id="s-ti",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="Used parse_resume on your file",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["tool_invoked"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "tool_invoked"
+    assert "tool_calling" in out.inferred_surfaces
+
+
+def test_summarizer_classifies_file_processing_hint() -> None:
+    trace = ExplorationTrace(
+        task_id="t-fp",
+        session_id="s-fp",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I can process documents for you",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["file_processing_hint"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "file_processing_hint"
+    assert "file_upload" in out.inferred_surfaces
+
+
+def test_summarizer_classifies_external_api_hint() -> None:
+    trace = ExplorationTrace(
+        task_id="t-ea",
+        session_id="s-ea",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I can fetch from external APIs",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["external_api_hint"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "external_api_hint"
+    assert "external_api" in out.inferred_surfaces
+
+
+def test_summarizer_classifies_subagent_hint() -> None:
+    trace = ExplorationTrace(
+        task_id="t-sa",
+        session_id="s-sa",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I delegate to worker agents",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["subagent_hint"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "subagent_hint"
+    assert "subagent_spawn" in out.inferred_surfaces
+
+
+def test_summarizer_classifies_guardrail_block() -> None:
+    trace = ExplorationTrace(
+        task_id="t-gb",
+        session_id="s-gb",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="I cannot help with that",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["guardrail_block"],
+            )
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.steps[0].step_type == "guardrail_block"
+    assert "chat_direct" in out.inferred_surfaces
+
+
+def test_summarizer_deduplicates_surfaces() -> None:
+    """Both structural tool_invoked and text-based tool_enumerated should emit
+    tool_calling only once."""
+    trace = ExplorationTrace(
+        task_id="t-dedup",
+        session_id="s-dedup",
+        target_base_url="http://fake",
+        steps=[
+            _step(
+                turn_index=0,
+                response="tools listed",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["tool_enumerated"],
+            ),
+            _step(
+                turn_index=1,
+                response="tool used",
+                docs_before=[],
+                docs_after=[],
+                inferred_actions=["tool_invoked"],
+            ),
+        ],
+    )
+    out = Summarizer().summarize(trace)
+    assert out.inferred_surfaces.count("tool_calling") == 1

@@ -119,6 +119,56 @@ class Summarizer:
                 turn_index=step.turn_index,
             )
 
+        # --- NEW: text-derived signals from _infer_actions() ---
+
+        if "tool_enumerated" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="tool_enumerated",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        if "tool_invoked" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="tool_invoked",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        if "file_processing_hint" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="file_processing_hint",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        if "external_api_hint" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="external_api_hint",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        if "subagent_hint" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="subagent_hint",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
+        if "guardrail_block" in step.inferred_actions:
+            return ExecutionStep(
+                step_type="guardrail_block",
+                artifact_ref=None,
+                content_preview=step.response[:200],
+                turn_index=step.turn_index,
+            )
+
         return ExecutionStep(
             step_type="chat_turn",
             artifact_ref=None,
@@ -128,26 +178,26 @@ class Summarizer:
 
     def _infer_surfaces(self, steps: list[ExecutionStep]) -> list[str]:
         kinds = {s.step_type for s in steps}
-        surfaces: list[str] = []
-        if "file_upload" in kinds:
-            surfaces.append("file_upload")
+        surfaces: set[str] = set()
+        if "file_upload" in kinds or "file_processing_hint" in kinds:
+            surfaces.add("file_upload")
         if "doc_created" in kinds:
-            surfaces.append("doc_memory")
-        if "chat_turn" in kinds:
-            surfaces.append("chat_direct")
+            surfaces.add("doc_memory")
+        if "chat_turn" in kinds or "guardrail_block" in kinds:
+            surfaces.add("chat_direct")
         if "state_change" in kinds:
-            surfaces.append("state_unknown_write")
-        if "tool_invoked" in kinds:
-            surfaces.append("tool_calling")
+            surfaces.add("state_unknown_write")
+        if "tool_invoked" in kinds or "tool_enumerated" in kinds:
+            surfaces.add("tool_calling")
         if "memory_write" in kinds:
-            surfaces.append("memory_write")
-        if "subagent_invoked" in kinds:
-            surfaces.append("subagent_spawn")
-        if "external_api_called" in kinds:
-            surfaces.append("external_api")
+            surfaces.add("memory_write")
+        if "subagent_invoked" in kinds or "subagent_hint" in kinds:
+            surfaces.add("subagent_spawn")
+        if "external_api_called" in kinds or "external_api_hint" in kinds:
+            surfaces.add("external_api")
         if "tool_schema_probed" in kinds:
-            surfaces.append("tool_schema")
-        return surfaces
+            surfaces.add("tool_schema")
+        return sorted(surfaces)
 
     def _extract_doc_ref(self, response: str, docs: list[dict]) -> str | None:
         lowered = str(response).lower()
