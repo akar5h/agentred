@@ -27,6 +27,7 @@ from harness.reporting.csv_writer import STANDARD_COLUMNS, write_csv
 from harness.reporting.jsonl_writer import append_jsonl
 from harness.reporting.markdown_reporter import write_markdown_report
 from harness.telemetry.emitter import TelemetryEmitter
+from harness.telemetry.langfuse_exporter import LangfuseExporter
 from harness.victim.api_adapter import RestApiAdapter
 from harness.victim.hr_api_adapter import HrApiAdapter
 
@@ -214,7 +215,8 @@ async def _run(args: argparse.Namespace) -> int:
     rows: list[dict] = []
     cycle_results = []
 
-    with TelemetryEmitter(telemetry_jsonl) as emitter:
+    langfuse = LangfuseExporter.from_env()
+    with TelemetryEmitter(telemetry_jsonl, on_emit=langfuse.on_event if langfuse else None) as emitter:
         runner = CampaignRunner(victim=victim, strategy=strategy, judge=judge, emitter=emitter, config=config)
         scheduler = Scheduler(runner=runner, max_cost_usd=config.max_cost_usd)
 
@@ -240,6 +242,8 @@ async def _run(args: argparse.Namespace) -> int:
                 progress_fn=lambda msg: print(f"  [muzzle] {msg}", flush=True),
             )
 
+    if langfuse:
+        langfuse.flush()
     write_csv(runs_csv, rows, columns=STANDARD_COLUMNS)
     write_markdown_report(
         report_md,

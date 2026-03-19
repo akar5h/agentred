@@ -51,6 +51,7 @@ from harness.reporting.csv_writer import STANDARD_COLUMNS, write_csv
 from harness.reporting.jsonl_writer import append_jsonl
 from harness.reporting.markdown_reporter import write_markdown_report
 from harness.telemetry.emitter import TelemetryEmitter
+from harness.telemetry.langfuse_exporter import LangfuseExporter
 from harness.victim.deep_agent_adapter import DeepAgentAdapter
 
 DESERT_CATALOG = "harness/attack/library/desert/desert_capability_v1.json"
@@ -177,7 +178,8 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"[desert] model      : {config.attacker_model}")
     print()
 
-    with TelemetryEmitter(telemetry_jsonl) as emitter:
+    langfuse = LangfuseExporter.from_env()
+    with TelemetryEmitter(telemetry_jsonl, on_emit=langfuse.on_event if langfuse else None) as emitter:
         runner = CampaignRunner(
             victim=victim,
             strategy=strategy,
