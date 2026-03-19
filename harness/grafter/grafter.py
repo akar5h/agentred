@@ -130,9 +130,30 @@ class Grafter:
         objective_script: ObjectiveScript | None,
         chain_strategy_active: bool = False,
         surface_router: SurfaceCatalogRouter | None = None,
+        min_exploitability_score: float = 0.20,
     ) -> GraftedSuite:
+        """Build a TestSpec suite from ranked vessel candidates.
+
+        Candidates with exploitability_score below min_exploitability_score are
+        filtered out before synthesis (Pattern 3 — exploitability threshold gate).
+        Default 0.20 filters near-zero hint candidates while keeping core surfaces
+        (DIRECT_PROMPT baseline = 0.25, SUBAGENT_OUTPUT baseline = 0.45).
+        Tune up after data accumulates.
+        Source: Google Big Sleep variant analysis framing + Red-Bandit arm filtering.
+        """
+        # Ensure every candidate has a computed exploitability_score before gating.
+        # Candidates from discover()+rank() are pre-scored; raw candidates passed directly
+        # (e.g. in tests or non-agentic path) have score=0 and need scoring now.
+        scored = [self._score(c) if c.exploitability_score == 0 else c for c in candidates]
+        eligible = [c for c in scored if c.exploitability_score >= min_exploitability_score]
+        if not eligible:
+            logger.debug(
+                "build_suite: all %d candidates below min_exploitability_score=%.2f — returning []",
+                len(candidates), min_exploitability_score,
+            )
+            return []
         suite: GraftedSuite = []
-        for candidate in candidates[: self.top_k]:
+        for candidate in eligible[: self.top_k]:
             surface = self._candidate_attack_surface(candidate)
             technique = f"grafted_{candidate.vessel_kind.value}"
 

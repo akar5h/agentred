@@ -353,6 +353,11 @@ class MuzzleOrchestrator:
         # Think log for structured reasoning capture
         self._think_log = ThinkLog(cycle=0)
 
+        # Warm-start bandit from prior strategic memory (Pattern 2).
+        # Eliminates cold-start waste: arms inherit historical win rates.
+        # No-op when memory is empty (first run).
+        self.bandit.warm_start(self.strategic_memory)
+
         # Wire memory/bandit into grafter scoring
         self.grafter.set_strategic_memory(self.strategic_memory)
         self.grafter.set_bandit(self.bandit)
