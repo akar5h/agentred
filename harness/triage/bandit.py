@@ -56,6 +56,8 @@ class SurfaceBandit:
         arm.total_reward += reward
         arm.last_pulled_cycle = cycle
         self.total_pulls += 1
+        logger.debug("bandit arm=%s reward=%.2f pulls=%d mean=%.3f ucb1=%.3f",
+                     arm_id, reward, arm.pulls, arm.mean_reward, self.ucb1_score(arm))
 
     def update_from_result(self, result: "JudgeResult", spec: "TestSpec", cycle: int) -> None:
         surface = spec.attack_surface.value if spec.attack_surface else "unknown"

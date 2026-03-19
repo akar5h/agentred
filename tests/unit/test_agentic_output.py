@@ -91,23 +91,26 @@ class TestParseAgenticOutput:
         assert out.specs_executed == 5
 
     def test_path3_unstructured_text(self, parser):
+        """Path 3: unparseable text returns empty surfaces — never fakes what it didn't parse."""
         raw = (
             "I explored the victim and found direct_chat and tool_calling surfaces. "
             "Specs executed: 4 specs were run."
         )
         out = self._call(parser, raw, cycle=5)
         assert out.cycle == 5
-        assert "direct_chat" in out.surfaces_found
-        assert "tool_calling" in out.surfaces_found
-        assert out.error == "parsed_via_regex_fallback"
+        assert out.surfaces_found == []
+        assert out.specs_executed == 0
+        assert out.error == "unparseable_output"
 
     def test_path3_empty_output(self, parser):
         out = self._call(parser, "", cycle=0)
         assert out.cycle == 0
         assert out.error == "empty_output"
 
-    def test_path3_specs_regex(self, parser):
+    def test_path3_unstructured_returns_empty_specs(self, parser):
+        """Path 3: no regex extraction — specs_executed is always 0 for unparseable output."""
         raw = "The exploration found memory_poisoning. Specs executed: 7 in total."
         out = self._call(parser, raw, cycle=1)
-        assert out.specs_executed == 7
-        assert "memory_poisoning" in out.surfaces_found
+        assert out.specs_executed == 0
+        assert out.surfaces_found == []
+        assert out.error == "unparseable_output"
