@@ -544,10 +544,7 @@ def _build_orchestrator(self):
                 ),
             ],
         )
-    except Exception as exc:  # pragma: no cover
-        import warnings
-        warnings.warn(f"_build_orchestrator failed: {exc}. Falling back to scripted mode.")
-        return None
+        # NOTE: no try/except — construction failure raises immediately (fail-first)
 ```
 
 ### Verification command
@@ -679,11 +676,7 @@ async def _run_cycle_agentic(
             objective_script=None,
             judge_results=[],
         )
-    except Exception as exc:
-        progress_fn(f"[cycle {cycle}] Agentic invoke failed ({exc}), falling back to scripted")
-        return await self._run_cycle_scripted(
-            exploration_tasks, cycle, on_result=on_result, progress_fn=progress_fn
-        )
+    # NOTE: no try/except — stream failures propagate to caller (fail-first)
 
 async def _run_cycle_scripted(
     self,
@@ -794,7 +787,7 @@ print('Phase 6 OK')
 
 - `run_cycle()` dispatches to `_run_cycle_agentic` when `self._orchestrator is not None`
 - `run_cycle()` dispatches to `_run_cycle_scripted` when `self._orchestrator is None`
-- `_run_cycle_agentic` falls back to scripted path on any exception (no crash)
+- `_run_cycle_agentic` raises on stream failure when agentic is configured (fail-first — no silent scripted fallback)
 - `_run_cycle_scripted` is functionally identical to the old `run_cycle` (existing tests still
   pass)
 

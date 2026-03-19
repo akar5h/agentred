@@ -157,14 +157,19 @@ class ObjectiveReplayer:
         if not self.api_key:
             return {}
         try:
-            from langchain_anthropic import ChatAnthropic
+            from langchain_openai import ChatOpenAI
             from langchain_core.messages import HumanMessage, SystemMessage
         except Exception as exc:
             logger.warning("LangChain imports unavailable for distiller: %s", exc)
             return {}
 
         try:
-            llm = ChatAnthropic(model=self.model, api_key=self.api_key)
+            llm = ChatOpenAI(
+                model=self.model,
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.api_key,
+                max_tokens=1024,
+            )
             response = await llm.ainvoke(
                 [
                     SystemMessage(content=DISTILLER_SYSTEM),

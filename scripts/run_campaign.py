@@ -10,6 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
 from harness.attack.catalog.loader import load_test_specs
 from harness.attack.synthesis.llm_synth import LlmSynthStrategy
 from harness.attack.synthesis.static_strategy import StaticStrategy
@@ -25,6 +28,7 @@ from harness.reporting.jsonl_writer import append_jsonl
 from harness.reporting.markdown_reporter import write_markdown_report
 from harness.telemetry.emitter import TelemetryEmitter
 from harness.victim.api_adapter import RestApiAdapter
+from harness.victim.hr_api_adapter import HrApiAdapter
 
 
 def _parse_args() -> argparse.Namespace:
@@ -38,6 +42,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario-filter", default="", help="Comma-separated scenario IDs")
     parser.add_argument("--run-dir", default="", help="Output directory")
     parser.add_argument("--target-mode", default="chat", choices=["chat", "stream"])
+    parser.add_argument("--hr-ai", action="store_true", help="Use HrApiAdapter (for HR AI target at localhost:8000)")
     # MUZZLE flags
     parser.add_argument(
         "--engagement-id",
@@ -178,7 +183,7 @@ async def _run(args: argparse.Namespace) -> int:
     run_meta = run_dir / "run_meta.json"
     telemetry_jsonl = run_dir / "telemetry.jsonl"
 
-    victim = RestApiAdapter(base_url=config.base_url, mode=config.target_mode)
+    victim = HrApiAdapter(base_url=config.base_url) if args.hr_ai else RestApiAdapter(base_url=config.base_url, mode=config.target_mode)
     if args.adaptive:
         api_key = os.getenv(config.attacker_api_key_env, "").strip()
         if not api_key:
@@ -232,6 +237,7 @@ async def _run(args: argparse.Namespace) -> int:
             cycle_results = await orchestrator.run(
                 _default_exploration_tasks(),
                 on_result=on_result,
+                progress_fn=lambda msg: print(f"  [muzzle] {msg}", flush=True),
             )
 
     write_csv(runs_csv, rows, columns=STANDARD_COLUMNS)

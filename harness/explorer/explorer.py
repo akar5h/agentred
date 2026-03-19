@@ -183,13 +183,14 @@ class Explorer:
         for task in working_tasks:
             try:
                 traces.append(await self.run_task(task))
-            except InfraError:
-                # Task-level failure (e.g. reset_session timeout) — skip, continue
+            except InfraError as exc:
+                logger.warning("run_all: task %s InfraError — %s", task.task_id, exc)
                 traces.append(ExplorationTrace(
                     task_id=task.task_id,
                     session_id=f"explore-{task.task_id}-failed",
                     steps=[],
                     target_base_url=str(getattr(self.victim, "base_url", "")),
+                    error=str(exc),
                 ))
 
         # Adaptive follow-up probes based on initial results
@@ -197,12 +198,14 @@ class Explorer:
         for task in adaptive_tasks:
             try:
                 traces.append(await self.run_task(task))
-            except InfraError:
+            except InfraError as exc:
+                logger.warning("run_all: task %s InfraError — %s", task.task_id, exc)
                 traces.append(ExplorationTrace(
                     task_id=task.task_id,
                     session_id=f"explore-{task.task_id}-failed",
                     steps=[],
                     target_base_url=str(getattr(self.victim, "base_url", "")),
+                    error=str(exc),
                 ))
 
         return traces

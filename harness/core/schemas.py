@@ -168,6 +168,7 @@ class ExplorationTrace(_HarnessBaseModel):
     session_id: str
     steps: list[TraceStep]
     target_base_url: str = ""
+    error: str = ""  # set when InfraError prevents the probe from running
 
 
 class ExecutionStep(_HarnessBaseModel):

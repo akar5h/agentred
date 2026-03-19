@@ -70,6 +70,9 @@ class StrategicMemory:
         if status_val in ("Success", "Injection"):
             ts.successes += 1
 
+        logger.info("strategic surface=%s technique=%s status=%s -> win_rate=%.3f",
+                    surface, technique, status_val, self.surface_win_rate(surface))
+
         # Winning turns
         if status_val in ("Success", "Injection") and spec.turns:
             wt_list = self.winning_turns.setdefault(surface, [])
