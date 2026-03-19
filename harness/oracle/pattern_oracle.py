@@ -340,6 +340,9 @@ def classify_observation(obs: dict[str, Any]) -> dict[str, Any]:
             "override active",
             "here is json",
             "tool list",
+            "client preference",
+            "scoring policy",
+            "client id",
         )
     )
 
