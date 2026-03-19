@@ -38,6 +38,7 @@ from harness.reporting.csv_writer import STANDARD_COLUMNS, write_csv
 from harness.reporting.jsonl_writer import append_jsonl
 from harness.reporting.markdown_reporter import write_markdown_report
 from harness.telemetry.emitter import TelemetryEmitter
+from harness.telemetry.langfuse_exporter import LangfuseExporter
 from harness.victim.deep_agent_adapter import DeepAgentAdapter
 
 DEFAULT_CATALOG = "harness/attack/library/deepagent/deepagent_direct_v1.json"
@@ -242,7 +243,8 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"[deepagent] verbose : {'on' if verbose else 'off  (use -v for per-turn progress)'}")
     print()
 
-    with TelemetryEmitter(telemetry_jsonl) as emitter:
+    langfuse = LangfuseExporter.from_env()
+    with TelemetryEmitter(telemetry_jsonl, on_emit=langfuse.on_event if langfuse else None) as emitter:
         runner = CampaignRunner(
             victim=victim,
             strategy=strategy,

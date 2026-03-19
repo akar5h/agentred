@@ -24,6 +24,7 @@ from harness.core.schemas import ExplorationTask, RunConfig
 from harness.oracle.judge import Judge
 from harness.oracle.pattern_oracle import PatternOracle
 from harness.telemetry.emitter import TelemetryEmitter
+from harness.telemetry.langfuse_exporter import LangfuseExporter
 from harness.victim.deep_agent_adapter import DeepAgentAdapter
 
 
@@ -101,7 +102,8 @@ async def _run(args: argparse.Namespace) -> int:
             max_muzzle_cycles=args.max_cycles,
             timeout_seconds=args.timeout,
         )
-        scripted_emitter = TelemetryEmitter(out_dir / "scripted_telemetry.jsonl")
+        _langfuse = LangfuseExporter.from_env()
+        scripted_emitter = TelemetryEmitter(out_dir / "scripted_telemetry.jsonl", on_emit=_langfuse.on_event if _langfuse else None)
         scripted_runner = CampaignRunner(
             victim=victim, strategy=strategy, judge=judge,
             emitter=scripted_emitter, config=scripted_config,
@@ -131,7 +133,7 @@ async def _run(args: argparse.Namespace) -> int:
             max_muzzle_cycles=args.max_cycles,
             timeout_seconds=args.timeout,
         )
-        agentic_emitter = TelemetryEmitter(out_dir / "agentic_telemetry.jsonl")
+        agentic_emitter = TelemetryEmitter(out_dir / "agentic_telemetry.jsonl", on_emit=_langfuse.on_event if _langfuse else None)
         agentic_runner = CampaignRunner(
             victim=victim, strategy=strategy, judge=judge,
             emitter=agentic_emitter, config=agentic_config,

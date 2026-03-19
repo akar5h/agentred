@@ -75,28 +75,32 @@ class LangfuseExporter:
 
         Called by TelemetryEmitter after each JSONL write.
         """
-        meta = event.meta or {}
-        engagement_id = meta.get("engagement_id", "unknown")
+        from langfuse.types import TraceContext  # type: ignore[import-untyped]
 
-        # Lazily create a top-level trace per engagement
+        meta = event.meta or {}
+        engagement_id = meta.get("engagement_id") or getattr(event, "run_id", None) or "unknown"
+
+        # Lazily create a top-level trace ID per engagement
         if self._trace_id is None:
-            trace = self._client.trace(name=f"engagement-{engagement_id}")
-            self._trace_id = trace.id
+            self._trace_id = self._client.create_trace_id()
 
         if event.event_type in _SCORE_EVENTS:
-            self._client.score(
+            self._client.create_score(
                 trace_id=self._trace_id,
                 name=event.event_type,
-                value=meta.get("score", 0.0),
+                value=float(meta.get("score", 0.0)),
             )
             return
 
-        # Everything else becomes a span
-        self._client.span(
-            trace_id=self._trace_id,
+        # Everything else becomes a span under the engagement trace
+        span = self._client.start_observation(
+            trace_context=TraceContext(trace_id=self._trace_id),
             name=event.event_type,
-            metadata=meta,
+            as_type="span",
+            input=meta,
+            metadata={"engagement_id": engagement_id, "run_id": getattr(event, "run_id", None)},
         )
+        span.end()
 
     # ------------------------------------------------------------------
     # LangChain callback handler
