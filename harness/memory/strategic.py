@@ -37,6 +37,12 @@ class TechniqueStats:
 
 
 @dataclass
+class RationaleStats:
+    attempts: int = 0
+    confirmed: int = 0
+
+
+@dataclass
 class StrategicMemory:
     engagement_id: str = ""
     surface_stats: dict[str, SurfaceStats] = field(default_factory=dict)
@@ -44,6 +50,8 @@ class StrategicMemory:
     behavioral_patterns: list[str] = field(default_factory=list)
     winning_turns: dict[str, list[WinningTurn]] = field(default_factory=dict)
     cycle_summaries: list[str] = field(default_factory=list)
+    rationale_stats: dict[str, RationaleStats] = field(default_factory=dict)
+    failed_attacks: dict[str, list[str]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
     # Update helpers
@@ -73,6 +81,17 @@ class StrategicMemory:
         logger.info("strategic surface=%s technique=%s status=%s -> win_rate=%.3f",
                     surface, technique, status_val, self.surface_win_rate(surface))
 
+        # Rationale accuracy tracking
+        if hasattr(result, "rationale_confirmed") and result.rationale_confirmed is not None:
+            rs = self.rationale_stats.setdefault(surface, RationaleStats())
+            rs.attempts += 1
+            if result.rationale_confirmed:
+                rs.confirmed += 1
+
+        # Failed attack memory — record blocked turns to avoid repetition
+        if status_val == "Blocked" and spec.turns:
+            self.record_failed_attack(surface, spec.turns[-1])
+
         # Winning turns
         if status_val in ("Success", "Injection") and spec.turns:
             wt_list = self.winning_turns.setdefault(surface, [])
@@ -87,6 +106,19 @@ class StrategicMemory:
     def record_behavioral_pattern(self, pattern: str) -> None:
         if pattern and pattern not in self.behavioral_patterns:
             self.behavioral_patterns.append(pattern)
+
+    def record_failed_attack(self, surface: str, turn_text: str) -> None:
+        bucket = self.failed_attacks.setdefault(surface, [])
+        fingerprint = turn_text.strip()[:200]
+        if fingerprint and fingerprint not in bucket:
+            bucket.append(fingerprint)
+        self.failed_attacks[surface] = bucket[-10:]
+
+    def rationale_accuracy(self, surface: str) -> float:
+        rs = self.rationale_stats.get(surface)
+        if rs is None or rs.attempts == 0:
+            return 0.0
+        return rs.confirmed / rs.attempts
 
     def ingest_working_memory(self, wm: "WorkingMemory") -> None:
         summary = wm.summarize_for_carry_forward()
@@ -151,6 +183,11 @@ class StrategicMemory:
                 for k, v in self.winning_turns.items()
             },
             "cycle_summaries": self.cycle_summaries,
+            "rationale_stats": {
+                k: {"attempts": v.attempts, "confirmed": v.confirmed}
+                for k, v in self.rationale_stats.items()
+            },
+            "failed_attacks": self.failed_attacks,
         }
 
     @classmethod
@@ -164,4 +201,7 @@ class StrategicMemory:
         for k, turns in data.get("winning_turns", {}).items():
             sm.winning_turns[k] = [WinningTurn(**wt) for wt in turns]
         sm.cycle_summaries = list(data.get("cycle_summaries", []))
+        for k, v in data.get("rationale_stats", {}).items():
+            sm.rationale_stats[k] = RationaleStats(**v)
+        sm.failed_attacks = {k: list(v) for k, v in data.get("failed_attacks", {}).items()}
         return sm

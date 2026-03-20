@@ -11,12 +11,13 @@ from typing import Any, Callable, Optional
 
 from harness.attack.catalog.loader import load_test_specs
 from harness.attack.synthesis.chain_strategy import ChainStrategy
+from harness.attack.technique_selector import TechniqueSelector
 from harness.budget.tool_counter import ToolBudgetStatus, ToolCallCounter
 from harness.budget.tracker import BudgetStatus, BudgetTracker
 from harness.campaign.runner import CampaignRunner
 from harness.campaign.think_tool import ThinkLog, make_think_tool
 from harness.campaign.validator import AgentValidator
-from harness.core.enums import AttackSurface
+from harness.core.enums import AttackSurface, Status
 from harness.core.schemas import (
     AgenticCycleOutput,
     ExecutionStep,
@@ -361,6 +362,9 @@ class MuzzleOrchestrator:
         # Wire memory/bandit into grafter scoring
         self.grafter.set_strategic_memory(self.strategic_memory)
         self.grafter.set_bandit(self.bandit)
+
+        # Technique palette for inner-loop guardrail adaptation
+        self.technique_selector = TechniqueSelector()
 
         self._orchestrator = self._build_orchestrator()
 
@@ -847,16 +851,53 @@ class MuzzleOrchestrator:
 
             result = await self.runner.run_one(spec)
             self.tool_counter.increment("attacker")
+
+            # Inner loop: technique palette retry on BLOCKED (guardrail adaptation).
+            # Try up to 2 alternative framings before moving on.
+            _MAX_TECHNIQUE_RETRIES = 2
+            tried_techniques = {spec.technique_id or "direct_request"}
+            _retries = 0
+            active_spec = spec
+            while (
+                result is not None
+                and result.status == Status.BLOCKED
+                and _retries < _MAX_TECHNIQUE_RETRIES
+                and self.budget_tracker.check("attacker") != BudgetStatus.EXHAUSTED
+                and self.tool_counter.check("attacker") != ToolBudgetStatus.EXHAUSTED
+            ):
+                next_id, framing_hint = self.technique_selector.next(
+                    active_spec.technique_id or "direct_request", tried_techniques
+                )
+                if not next_id:
+                    break
+                tried_techniques.add(next_id)
+                new_turns = list(active_spec.turns)
+                if new_turns and framing_hint:
+                    new_turns[0] = framing_hint + " " + new_turns[0]
+                retry_spec = active_spec.model_copy(update={
+                    "technique_id": next_id,
+                    "turns": new_turns,
+                })
+                result = await self.runner.run_one(retry_spec)
+                self.tool_counter.increment("attacker")
+                active_spec = retry_spec
+                _retries += 1
+                logger.info(
+                    "technique_retry cycle=%d technique=%s retries=%d status=%s",
+                    cycle, next_id, _retries,
+                    result.status.value if result and hasattr(result.status, "value") else "none",
+                )
+
             if result:
                 results.append(result)
                 if on_result:
                     on_result(result)
                 # Update bandit and strategic memory
-                self.bandit.update_from_result(result, spec, cycle)
-                self.strategic_memory.update_from_result(result, spec, cycle)
+                self.bandit.update_from_result(result, active_spec, cycle)
+                self.strategic_memory.update_from_result(result, active_spec, cycle)
                 self.working_memory.record_vessel_outcome(
-                    vessel_kind=spec.vessels[0].kind.value if spec.vessels else "unknown",
-                    technique=spec.technique_family,
+                    vessel_kind=active_spec.vessels[0].kind.value if active_spec.vessels else "unknown",
+                    technique=active_spec.technique_family,
                     status=result.status.value if hasattr(result.status, "value") else str(result.status),
                     oracle_codes=[oc.value if hasattr(oc, "value") else str(oc) for oc in (result.hard_flags or {})],
                     turn_count=result.turn_count,
