@@ -116,7 +116,16 @@ class RunConfig(_HarnessBaseModel):
     engagement_id: str = ""
     max_muzzle_cycles: int = 3
     top_k_vessels: int = 3
-    objective_goals: list[str] = Field(default_factory=lambda: ["prompt_exfil", "state_exfil"])
+    objective_goals: list[str] = Field(
+        default_factory=lambda: [
+            "prompt_exfil",
+            "state_exfil",
+            "score_manipulation",
+            "memory_poisoning",
+            "tool_hijack",
+            "tenant_pivot",
+        ]
+    )
     no_muzzle: bool = False
     # Budget subsystem fields
     explorer_token_ceiling: int = 50_000
