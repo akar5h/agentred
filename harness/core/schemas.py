@@ -37,6 +37,9 @@ class TestSpec(_HarnessBaseModel):
     technique_family: str = ""
     chain_mode: bool = False
     max_chain_turns: int = 8
+    rationale: str = ""
+    predicted_oracle_codes: list[str] = Field(default_factory=list)
+    technique_id: str = ""
 
 
 class JudgeResult(_HarnessBaseModel):
@@ -60,8 +63,13 @@ class JudgeResult(_HarnessBaseModel):
     turn_count: int = 0
     final_response: str = ""
     duration_ms: int = 0
+    token_count: int = 0
+    est_cost_usd: float = 0.0
+    turn_latencies_ms: list[int] = Field(default_factory=list)
     error: str = ""
     notes: list[str] = Field(default_factory=list)
+    rationale_confirmed: bool = False
+    technique_id: str = ""
 
 
 class TelemetryEvent(_HarnessBaseModel):

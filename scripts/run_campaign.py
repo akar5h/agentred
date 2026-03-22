@@ -214,6 +214,7 @@ async def _run(args: argparse.Namespace) -> int:
 
     rows: list[dict] = []
     cycle_results = []
+    orchestrator = None
 
     langfuse = LangfuseExporter.from_env()
     with TelemetryEmitter(telemetry_jsonl, on_emit=langfuse.on_event if langfuse else None) as emitter:
@@ -277,6 +278,18 @@ async def _run(args: argparse.Namespace) -> int:
                         }
                         for r in cycle_results
                     ],
+                },
+                "bandit_arms": {
+                    arm_id: {
+                        "pulls": arm.pulls,
+                        "total_reward": round(arm.total_reward, 4),
+                        "mean_reward": round(arm.mean_reward, 4),
+                    }
+                    for arm_id, arm in (
+                        orchestrator.bandit.arms.items()
+                        if orchestrator and hasattr(orchestrator, "bandit") and orchestrator.bandit
+                        else {}.items()
+                    )
                 },
                 "outputs": {
                     "runs_jsonl": str(runs_jsonl),

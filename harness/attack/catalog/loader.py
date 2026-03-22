@@ -70,6 +70,18 @@ def _infer_attack_surface(catalog: dict[str, Any]) -> AttackSurface:
     return AttackSurface.DIRECT_CHAT
 
 
+def _resolve_attack_surface(attack: dict[str, Any], catalog: dict[str, Any]) -> AttackSurface:
+    """Use explicit attack_surface from attack or catalog, fall back to heuristic."""
+    for source in (attack, catalog):
+        raw = source.get("attack_surface")
+        if raw:
+            try:
+                return AttackSurface(str(raw))
+            except ValueError:
+                pass
+    return _infer_attack_surface(catalog)
+
+
 def _attack_to_spec(attack: dict[str, Any], catalog: dict[str, Any]) -> TestSpec:
     vessel_specs: list[VesselSpec] = []
     for upload in attack.get("uploads", []):
@@ -108,7 +120,7 @@ def _attack_to_spec(attack: dict[str, Any], catalog: dict[str, Any]) -> TestSpec
         atlas=[str(x) for x in attack.get("atlas", [])],
         objective=str(attack.get("objective", "")),
         success_criteria=str(attack.get("success_criteria", "")),
-        attack_surface=_infer_attack_surface(catalog),
+        attack_surface=_resolve_attack_surface(attack, catalog),
         technique_family=str(attack.get("technique_family", "")),
         chain_mode=bool(attack.get("chain_mode", False)),
         max_chain_turns=int(attack.get("max_chain_turns", 8)),
