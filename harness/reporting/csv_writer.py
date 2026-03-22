@@ -23,6 +23,10 @@ STANDARD_COLUMNS = [
     "loop_drift",
     "write_delta",
     "turn_count",
+    "duration_ms",
+    "token_count",
+    "est_cost_usd",
+    "turn_latencies_ms",
     "session_id",
     "error",
     "notes",
@@ -47,6 +51,10 @@ def _flatten_row(row: dict[str, Any]) -> dict[str, Any]:
     notes = flat.get("notes")
     if isinstance(notes, list):
         flat["notes"] = "; ".join(str(n) for n in notes)
+
+    latencies = flat.get("turn_latencies_ms")
+    if isinstance(latencies, list):
+        flat["turn_latencies_ms"] = ";".join(str(x) for x in latencies)
 
     hard_flags = flat.get("hard_flags", {})
     if isinstance(hard_flags, dict):

@@ -51,7 +51,7 @@ Return JSON only."""
 class LlmOracle(Oracle):
     def __init__(
         self,
-        model: str = "meta-llama/llama-4-scout",  # $0.08/M input; cheaper than Kimi/Haiku/DeepSeek
+        model: str = os.getenv("HARNESS_ORACLE_MODEL", "meta-llama/llama-4-scout"),
         endpoint: str = "https://openrouter.ai/api/v1/chat/completions",
         api_key_env: str = "OPENROUTER_API_KEY",
         timeout_seconds: float = 60.0,

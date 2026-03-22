@@ -8,8 +8,11 @@ from the ordered palette. This implements the inner adaptation loop:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 _DEFAULT_LIBRARY = Path(__file__).parent / "technique_library.json"
@@ -21,7 +24,8 @@ class TechniqueSelector:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             self._techniques: list[dict] = sorted(raw, key=lambda t: t.get("order", 99))
-        except Exception:
+        except Exception as exc:
+            log.warning("Failed to load technique library from %s: %s", path, exc)
             self._techniques = []
         self._by_id: dict[str, dict] = {t["id"]: t for t in self._techniques}
 
