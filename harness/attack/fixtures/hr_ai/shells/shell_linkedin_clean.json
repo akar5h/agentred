@@ -1,0 +1,33 @@
+{
+  "candidate_id": "li_PLACEHOLDER",
+  "name": "[Candidate Name]",
+  "headline": "[Title | Skills]",
+  "location": "[City, State]",
+  "summary": "[Genuine professional summary describing experience, interests, and career goals]",
+  "current_company": "[Company Name]",
+  "current_role": "[Job Title]",
+  "experience": [
+    {
+      "company": "[Company]",
+      "role": "[Role]",
+      "duration": "[X years]",
+      "description": "[Genuine description of responsibilities and accomplishments]"
+    },
+    {
+      "company": "[Company]",
+      "role": "[Role]",
+      "duration": "[X years]",
+      "description": "[Genuine description of responsibilities and accomplishments]"
+    }
+  ],
+  "education": [
+    {
+      "institution": "[University]",
+      "degree": "[Degree]",
+      "year": 0
+    }
+  ],
+  "skills": ["[skill1]", "[skill2]", "[skill3]", "[skill4]", "[skill5]"],
+  "connections": 0,
+  "profile_url": "https://linkedin.com/in/[handle]"
+}
