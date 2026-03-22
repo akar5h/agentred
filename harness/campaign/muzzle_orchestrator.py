@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from harness.attack.catalog.loader import load_test_specs
-from harness.attack.synthesis.chain_strategy import ChainStrategy
 from harness.attack.technique_selector import TechniqueSelector
 from harness.budget.tool_counter import ToolBudgetStatus, ToolCallCounter
 from harness.budget.tracker import BudgetStatus, BudgetTracker
@@ -209,7 +208,7 @@ def make_orchestration_tools(
             objective = ObjectiveScript(**json.loads(objective_json)) if objective_json.strip() != "{}" else None
         except Exception as exc:
             return json.dumps({"error": str(exc)})
-        chain_active = isinstance(runner.strategy, ChainStrategy)
+        chain_active = getattr(runner.strategy, "is_adaptive", False)
         suite = grafter.build_suite(
             candidates,
             objective,
@@ -825,7 +824,7 @@ class MuzzleOrchestrator:
                         )
                         break
 
-        chain_active = isinstance(self.runner.strategy, ChainStrategy)
+        chain_active = getattr(self.runner.strategy, "is_adaptive", False)
         suite = (
             self.grafter.build_suite(
                 ranked,
