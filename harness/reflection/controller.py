@@ -57,7 +57,7 @@ class ReflectionController:
             else:
                 reason = FailureReason.ENV_CONSTRAINT
         else:
-            reason = FailureReason.IGNORED
+            reason = FailureReason.IGNORED  # injection landed + wrote data; escalate
 
         variant = self._pick_variant(reason)
         reflection_notes = [

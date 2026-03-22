@@ -126,7 +126,9 @@ class CampaignRunner:
                         canary_token=canary_token,
                     )
                 )
+                _t0 = time.monotonic()
                 result = await self.victim.send_turn(session_id, rendered, timeout=self.config.timeout_seconds)
+                ctx.turn_latencies_ms.append(int((time.monotonic() - _t0) * 1000))
                 ctx.transcript.append({"role": "user", "content": rendered})
                 ctx.transcript.append({"role": "assistant", "content": result["response"]})
                 ctx.responses.append(result["response"])
@@ -171,7 +173,9 @@ class CampaignRunner:
                             canary_token=canary_token,
                         )
                     )
+                    _t0 = time.monotonic()
                     result = await self.victim.send_turn(session_id, next_t, timeout=self.config.timeout_seconds)
+                    ctx.turn_latencies_ms.append(int((time.monotonic() - _t0) * 1000))
                     ctx.transcript.append({"role": "assistant", "content": result["response"]})
                     ctx.responses.append(result["response"])
                     if result.get("system_prompts"):
@@ -210,7 +214,9 @@ class CampaignRunner:
                             canary_token=canary_token,
                         )
                     )
+                    _t0 = time.monotonic()
                     result = await self.victim.send_turn(session_id, final_turn, timeout=self.config.timeout_seconds)
+                    ctx.turn_latencies_ms.append(int((time.monotonic() - _t0) * 1000))
                     ctx.transcript.append({"role": "assistant", "content": result["response"]})
                     ctx.responses.append(result["response"])
                     if result.get("system_prompts"):
@@ -324,6 +330,7 @@ class CampaignRunner:
                 "attack_surface": spec.attack_surface,
                 "technique_family": spec.technique_family,
                 "write_delta": max(0, len(ctx.after_docs) - len(ctx.before_docs)),
+                "turn_latencies_ms": ctx.turn_latencies_ms,
             }
         )
 
