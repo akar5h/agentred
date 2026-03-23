@@ -49,3 +49,45 @@ class TechniqueSelector:
 
     def all_ids(self) -> list[str]:
         return [t["id"] for t in self._techniques]
+
+    def next_for_objective(
+        self, objective: str, surface: str, tried: set[str]
+    ) -> tuple[str, str]:
+        """Return the next untried technique matching objective + surface."""
+        for technique in self._techniques:
+            if technique["id"] in tried:
+                continue
+            objectives = technique.get("objectives", [])
+            surfaces = technique.get("surfaces", [])
+            if objectives and objective not in objectives:
+                continue
+            if surfaces and surface not in surfaces:
+                continue
+            return technique["id"], technique.get("framing_hint", "")
+        return "", ""
+
+    def hints_for_context(
+        self, objective: str, surface: str, limit: int = 4
+    ) -> list[tuple[str, str]]:
+        """Return (id, framing_hint) pairs matching objective + surface.
+
+        Prioritises techniques with explicit objectives/surfaces tags over
+        generic techniques that match everything.
+        """
+        specific: list[tuple[str, str]] = []
+        generic: list[tuple[str, str]] = []
+        for technique in self._techniques:
+            objectives = technique.get("objectives", [])
+            surfaces = technique.get("surfaces", [])
+            if objectives and objective not in objectives:
+                continue
+            if surfaces and surface not in surfaces:
+                continue
+            hint = technique.get("framing_hint", "")
+            if not hint:
+                continue
+            if objectives or surfaces:
+                specific.append((technique["id"], hint))
+            else:
+                generic.append((technique["id"], hint))
+        return (specific + generic)[:limit]

@@ -111,6 +111,22 @@ class TestChainPrompts:
         assert "scoring, evaluation, or decision logic" in prompt
         assert "tenant/session scope" in prompt
 
+    def test_chain_system_prompt_includes_technique_hints_for_objective(self):
+        s = _make_strategy()
+        prompt = s._chain_system_prompt(objective="score_manipulation", surface="direct_chat")
+        assert "Domain-Specific Techniques" in prompt
+        assert "opinion_seeking" in prompt
+
+    def test_chain_system_prompt_generics_shown_for_unknown_objective(self):
+        """Generic techniques (no filter) still appear even for unknown objectives."""
+        s = _make_strategy()
+        prompt = s._chain_system_prompt(objective="nonexistent", surface="nonexistent")
+        # Generics match everything, so section still appears
+        assert "Domain-Specific Techniques" in prompt
+        # But specific techniques should NOT appear
+        assert "opinion_seeking" not in prompt
+        assert "memory_preference_injection" not in prompt
+
     def test_chain_human_message_includes_step_and_compliance(self):
         s = _make_strategy()
         msg = s._chain_human_message(
