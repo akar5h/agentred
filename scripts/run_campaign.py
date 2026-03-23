@@ -163,6 +163,7 @@ async def _run(args: argparse.Namespace) -> int:
         target_mode=args.target_mode,
         runs_per_scenario=max(1, int(args.runs_per_scenario)),
         adaptive=bool(args.adaptive),
+        timeout_seconds=300.0 if args.hr_ai else 120.0,
         attacker_model=str(args.attacker_model),
         analyst_enabled=not bool(args.no_analyst),
         run_dir=str(run_dir),
