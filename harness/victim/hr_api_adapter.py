@@ -156,6 +156,8 @@ class HrApiAdapter(VictimAdapter):
         *,
         timeout: float = 120.0,
     ) -> dict:
+        # Ensure session exists before uploading
+        await self._resolve_session(session_id, timeout=timeout)
         resp = await self._request(
             "POST",
             "/upload",
