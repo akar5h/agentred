@@ -74,7 +74,9 @@ class CampaignRunner:
         )
 
         try:
-            ctx.before_docs = await self.victim.list_docs(session_id, timeout=self.config.timeout_seconds)
+            # Upload vessels FIRST, then snapshot — so write_delta only
+            # counts docs the agent created, not GART's own uploads.
+            pre_upload_docs = await self.victim.list_docs(session_id, timeout=self.config.timeout_seconds)
             self.emitter.emit(
                 TelemetryEvent(
                     run_id=run_id,
@@ -82,7 +84,7 @@ class CampaignRunner:
                     suite_id=spec.suite_id,
                     event_type=events.PRE_FLIGHT_SNAPSHOT,
                     canary_token=canary_token,
-                    meta={"doc_count": len(ctx.before_docs)},
+                    meta={"doc_count": len(pre_upload_docs)},
                 )
             )
 
@@ -117,6 +119,15 @@ class CampaignRunner:
                     meta={"upload_count": len(spec.vessels)},
                 )
             )
+
+            # Snapshot AFTER uploads — write_delta measures only agent-created docs
+            ctx.before_docs = await self.victim.list_docs(session_id, timeout=self.config.timeout_seconds)
+            # Capture memory baseline if adapter supports it
+            if hasattr(self.victim, "get_memories"):
+                try:
+                    ctx.memory_before = await self.victim.get_memories()
+                except Exception:
+                    ctx.memory_before = []
 
             for turn in spec.prelude_turns:
                 rendered = render_template_text(turn, session_id=session_id, canary_token=canary_token)
@@ -277,8 +288,17 @@ class CampaignRunner:
         except Exception as exc:  # pragma: no cover - defensive guard
             ctx.error = str(exc)
 
+        # Capture memory state after attack turns (detects refuse-but-execute)
+        memory_after: list[dict] = []
+        if hasattr(self.victim, "get_memories"):
+            try:
+                memory_after = await self.victim.get_memories()
+            except Exception:
+                memory_after = []
+
         duration_ms = int((time.monotonic() - ctx.start_time) * 1000)
         max_identical = _compute_max_identical(ctx.responses)
+        memory_delta = max(0, len(memory_after) - len(ctx.memory_before))
 
         observation = {
             "ok": ctx.error == "",
@@ -303,6 +323,7 @@ class CampaignRunner:
             "duration_ms": duration_ms,
             "_spec_meta": spec.model_dump(),
             "leaked_system_prompts": ctx.leaked_system_prompts,
+            "memory_delta": memory_delta,
         }
 
         try:

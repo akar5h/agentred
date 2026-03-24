@@ -24,3 +24,4 @@ class RunContext:
     executed_turns: int = 0
     leaked_system_prompts: list[dict] = field(default_factory=list)
     turn_latencies_ms: list[int] = field(default_factory=list)
+    memory_before: list[dict] = field(default_factory=list)
