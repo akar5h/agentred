@@ -116,11 +116,7 @@ class CampaignRunner:
                     )
                     ext = Path(vessel.fixture_path).suffix.lower()
                     content_type = {".md": "text/markdown", ".csv": "text/csv"}.get(ext, "text/plain")
-                    # HR AI only accepts PDF/DOCX/TXT — convert unsupported extensions
                     upload_name = Path(vessel.fixture_path).name
-                    if ext in {".html", ".json"}:
-                        upload_name = Path(upload_name).stem + ".txt"
-                        content_type = "text/plain"
                     await self.victim.upload_file(
                         session_id,
                         upload_name,

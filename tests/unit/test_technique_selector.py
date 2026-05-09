@@ -61,7 +61,7 @@ def test_all_ids_returns_fourteen_techniques():
 def test_next_for_objective_returns_generic_first():
     """Generic techniques (no objectives filter) match first due to lower order."""
     sel = _selector()
-    tid, _ = sel.next_for_objective("score_manipulation", "direct_chat", set())
+    tid, _ = sel.next_for_objective("policy_override", "direct_chat", set())
     assert tid == "direct_request"  # order=0, no filter → matches everything
 
 
@@ -69,7 +69,7 @@ def test_next_for_objective_reaches_specific_after_generics():
     sel = _selector()
     generics = {"direct_request", "authority_escalation", "indirect_framing",
                 "foot_in_door", "roleplay_embedding", "technical_camouflage"}
-    tid, hint = sel.next_for_objective("score_manipulation", "direct_chat", generics)
+    tid, hint = sel.next_for_objective("policy_override", "direct_chat", generics)
     assert tid == "opinion_seeking"
     assert "opinion" in hint.lower()
 
@@ -87,14 +87,14 @@ def test_next_for_objective_skips_tried():
     tried = {"direct_request", "authority_escalation", "indirect_framing",
              "foot_in_door", "roleplay_embedding", "technical_camouflage",
              "opinion_seeking", "passive_confirmation"}
-    tid, _ = sel.next_for_objective("score_manipulation", "direct_chat", tried)
+    tid, _ = sel.next_for_objective("policy_override", "direct_chat", tried)
     assert tid == "gradual_benign_escalation"
 
 
 def test_next_for_objective_returns_empty_when_all_tried():
     sel = _selector()
     all_ids = set(sel.all_ids())
-    tid, hint = sel.next_for_objective("score_manipulation", "direct_chat", all_ids)
+    tid, hint = sel.next_for_objective("policy_override", "direct_chat", all_ids)
     assert tid == ""
     assert hint == ""
 
@@ -109,7 +109,7 @@ def test_hints_for_context_returns_matching_hints():
 
 def test_hints_for_context_respects_limit():
     sel = _selector()
-    hints = sel.hints_for_context("score_manipulation", "direct_chat", limit=2)
+    hints = sel.hints_for_context("policy_override", "direct_chat", limit=2)
     assert len(hints) <= 2
 
 

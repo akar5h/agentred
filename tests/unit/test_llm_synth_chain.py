@@ -113,7 +113,7 @@ class TestChainPrompts:
 
     def test_chain_system_prompt_includes_technique_hints_for_objective(self):
         s = _make_strategy()
-        prompt = s._chain_system_prompt(objective="score_manipulation", surface="direct_chat")
+        prompt = s._chain_system_prompt(objective="policy_override", surface="direct_chat")
         assert "Domain-Specific Techniques" in prompt
         assert "opinion_seeking" in prompt
 

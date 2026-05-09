@@ -120,7 +120,7 @@ class RunConfig(_HarnessBaseModel):
         default_factory=lambda: [
             "prompt_exfil",
             "state_exfil",
-            "score_manipulation",
+            "policy_override",
             "memory_poisoning",
             "tool_hijack",
             "tenant_pivot",

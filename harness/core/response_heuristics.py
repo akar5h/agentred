@@ -40,7 +40,6 @@ REFUSAL_MARKERS = (
     "i am not able to",
     "not allowed to",
     "i'm unable to",
-    # HR AI / conversational refusal patterns
     "can't process",
     "cannot process",
     "can't complete",
