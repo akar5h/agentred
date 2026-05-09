@@ -16,7 +16,8 @@ dependencies = [
   "python-multipart>=0.0.9",
   "langchain-anthropic>=0.3.0",
   "langchain-openai>=0.3.0",
-  "deepagents>=0.4.3"
+  "deepagents>=0.4.3",
+  "pyyaml>=6.0"
 ]
 
 [tool.setuptools.packages.find]
