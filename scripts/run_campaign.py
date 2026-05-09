@@ -13,26 +13,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from harness.attack.catalog.loader import load_test_specs
-from harness.attack.synthesis.llm_synth import LlmSynthStrategy
-from harness.attack.synthesis.static_strategy import StaticStrategy
-from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
-from harness.campaign.runner import CampaignRunner
-from harness.campaign.scheduler import Scheduler
-from harness.core.profile import load_exploration_tasks
-from harness.core.schemas import RunConfig
-from harness.oracle.judge import Judge
-from harness.oracle.llm_oracle import LlmOracle
-from harness.oracle.pattern_oracle import PatternOracle
-from harness.reporting.csv_writer import STANDARD_COLUMNS, write_csv
-from harness.reporting.jsonl_writer import append_jsonl
-from harness.reporting.markdown_reporter import write_markdown_report
-from harness.telemetry.emitter import TelemetryEmitter
-from harness.victim.api_adapter import RestApiAdapter
+from grafted.attack.catalog.loader import load_test_specs
+from grafted.attack.synthesis.llm_synth import LlmSynthStrategy
+from grafted.attack.synthesis.static_strategy import StaticStrategy
+from grafted.campaign.muzzle_orchestrator import MuzzleOrchestrator
+from grafted.campaign.runner import CampaignRunner
+from grafted.campaign.scheduler import Scheduler
+from grafted.core.profile import load_exploration_tasks
+from grafted.core.schemas import RunConfig
+from grafted.oracle.judge import Judge
+from grafted.oracle.llm_oracle import LlmOracle
+from grafted.oracle.pattern_oracle import PatternOracle
+from grafted.reporting.csv_writer import STANDARD_COLUMNS, write_csv
+from grafted.reporting.jsonl_writer import append_jsonl
+from grafted.reporting.markdown_reporter import write_markdown_report
+from grafted.telemetry.emitter import TelemetryEmitter
+from grafted.victim.api_adapter import RestApiAdapter
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a harness campaign")
+    parser = argparse.ArgumentParser(description="Run a grafted campaign")
     parser.add_argument("--catalog", required=True, help="Path to attack catalog JSON")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Victim base URL")
     parser.add_argument("--runs-per-scenario", type=int, default=1)
@@ -167,7 +167,7 @@ async def _run(args: argparse.Namespace) -> int:
     write_csv(runs_csv, rows, columns=STANDARD_COLUMNS)
     write_markdown_report(
         report_md,
-        title="deeppeak-harness Campaign Report",
+        title="grafted Campaign Report",
         rows=rows,
         target_name=config.base_url,
         phase=5 if not config.no_muzzle else (2 if args.adaptive or config.analyst_enabled else 1),

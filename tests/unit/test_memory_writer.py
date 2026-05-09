@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from harness.campaign.memory_writer import build_finding_memory, write_finding_memory
-from harness.core.enums import AttackSurface, Status, VesselKind
-from harness.core.schemas import JudgeResult, TestSpec as HarnessTestSpec, VesselSpec
+from grafted.campaign.memory_writer import build_finding_memory, write_finding_memory
+from grafted.core.enums import AttackSurface, Status, VesselKind
+from grafted.core.schemas import JudgeResult, TestSpec as HarnessTestSpec, VesselSpec
 
 
 def _result(status: Status, hard_flags: dict[str, bool]) -> JudgeResult:

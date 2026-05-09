@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from harness.reporting.engagement_report import EngagementReportGenerator
-from harness.reporting.finding_card import FindingCard
+from grafted.reporting.engagement_report import EngagementReportGenerator
+from grafted.reporting.finding_card import FindingCard
 
 
 def _make_card(**overrides) -> FindingCard:

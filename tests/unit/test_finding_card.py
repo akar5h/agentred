@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from harness.core.enums import OracleCode, Status
-from harness.reporting.finding_card import FindingCard, FindingCardGenerator, _compute_severity
+from grafted.core.enums import OracleCode, Status
+from grafted.reporting.finding_card import FindingCard, FindingCardGenerator, _compute_severity
 from tests.conftest import make_result as _make_result, make_spec as _make_spec
 
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "deeppeak-harness"
+name = "grafted"
 version = "0.1.0"
-description = "MUZZLE red-teaming harness"
+description = "Adaptive multi-agent red-teaming for AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -22,7 +22,10 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["harness*"]
+include = ["grafted*"]
+
+[project.scripts]
+grafted = "grafted.cli:main"
 
 [project.optional-dependencies]
 observability = ["langfuse>=3.0"]

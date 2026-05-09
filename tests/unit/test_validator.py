@@ -1,7 +1,7 @@
-"""Tests for harness.campaign.validator — AgentValidator + ValidationReport."""
+"""Tests for grafted.campaign.validator — AgentValidator + ValidationReport."""
 from __future__ import annotations
 
-from harness.campaign.validator import AgentValidator, ValidationReport, ValidationWarning
+from grafted.campaign.validator import AgentValidator, ValidationReport, ValidationWarning
 
 
 class TestAgentValidator:

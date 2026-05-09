@@ -1,4 +1,4 @@
-"""Tests for harness.triage.bandit — SurfaceBandit, BanditArm, UCB1."""
+"""Tests for grafted.triage.bandit — SurfaceBandit, BanditArm, UCB1."""
 from __future__ import annotations
 
 import math
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from harness.core.enums import AttackSurface, Status
-from harness.triage.bandit import REWARD_MAP, BanditArm, SurfaceBandit
+from grafted.core.enums import AttackSurface, Status
+from grafted.triage.bandit import REWARD_MAP, BanditArm, SurfaceBandit
 from tests.conftest import make_result as _base_result, make_spec as _base_spec
 
 

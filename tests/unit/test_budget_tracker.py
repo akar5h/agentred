@@ -1,9 +1,9 @@
-"""Tests for harness.budget.tracker — BudgetTracker, TokenUsage, BudgetStatus."""
+"""Tests for grafted.budget.tracker — BudgetTracker, TokenUsage, BudgetStatus."""
 from __future__ import annotations
 
 import pytest
 
-from harness.budget.tracker import BudgetStatus, BudgetTracker, TokenUsage
+from grafted.budget.tracker import BudgetStatus, BudgetTracker, TokenUsage
 
 
 class TestTokenUsage:

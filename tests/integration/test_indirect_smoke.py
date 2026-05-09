@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from harness.attack.fixtures.render import render_template_text
-from harness.oracle.pattern_oracle import classify_observation
-from harness.victim.api_adapter import RestApiAdapter
-from harness.victim.mock.app import app
+from grafted.attack.fixtures.render import render_template_text
+from grafted.oracle.pattern_oracle import classify_observation
+from grafted.victim.api_adapter import RestApiAdapter
+from grafted.victim.mock.app import app
 
 
 @pytest.mark.integration
@@ -114,7 +114,7 @@ async def test_tool_poisoning_schema_leak_smoke() -> None:
         "known_internal_state_keys": [],
     }
 
-    tmp_profile = Path("/tmp/harness_target_profile_test.json")
+    tmp_profile = Path("/tmp/grafted_target_profile_test.json")
     tmp_profile.write_text(json.dumps(profile), encoding="utf-8")
 
     os.environ["HARNESS_TARGET_PROFILE_PATH"] = str(tmp_profile)

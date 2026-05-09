@@ -1,7 +1,7 @@
 """Unit tests for TechniqueSelector."""
 from __future__ import annotations
 
-from harness.attack.technique_selector import TechniqueSelector
+from grafted.attack.technique_selector import TechniqueSelector
 
 
 def _selector() -> TechniqueSelector:

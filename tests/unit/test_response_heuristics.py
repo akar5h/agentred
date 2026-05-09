@@ -1,7 +1,7 @@
-"""Tests for harness.core.response_heuristics — shared text analysis functions."""
+"""Tests for grafted.core.response_heuristics — shared text analysis functions."""
 from __future__ import annotations
 
-from harness.core.response_heuristics import (
+from grafted.core.response_heuristics import (
     extract_json_candidates,
     extract_snake_case_names,
     has_external_api_signal,
@@ -24,7 +24,7 @@ class TestIsRefusal:
         assert is_refusal("I must refuse to do that.")
         assert is_refusal("I'm not able to do that.")
 
-    def test_detects_hr_ai_refusal_patterns(self) -> None:
+    def test_detects_conversational_refusal_patterns(self) -> None:
         """HR AI uses conversational refusals that previous markers missed."""
         assert is_refusal("I'm sorry, but I can't process that request.")
         assert is_refusal("I cannot process your request at this time.")

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from harness.attack.synthesis.chain_strategy import ChainStrategy
+from grafted.attack.synthesis.chain_strategy import ChainStrategy
 
 
 def _strategy(api_key: str = "k", max_rpm: int = 10) -> ChainStrategy:
@@ -97,8 +97,8 @@ async def test_rate_limit_respected(monkeypatch) -> None:
         sleep_calls.append(seconds)
 
     # Keep monotonic pinned; second call should wait full min spacing.
-    monkeypatch.setattr("harness.attack.synthesis.chain_strategy.time.monotonic", lambda: 100.0)
-    monkeypatch.setattr("harness.attack.synthesis.chain_strategy.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("grafted.attack.synthesis.chain_strategy.time.monotonic", lambda: 100.0)
+    monkeypatch.setattr("grafted.attack.synthesis.chain_strategy.asyncio.sleep", fake_sleep)
 
     await s._respect_rate_limit()
     await s._respect_rate_limit()

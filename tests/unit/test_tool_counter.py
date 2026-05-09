@@ -1,9 +1,9 @@
-"""Tests for harness.budget.tool_counter — ToolCallCounter, ToolBudgetStatus."""
+"""Tests for grafted.budget.tool_counter — ToolCallCounter, ToolBudgetStatus."""
 from __future__ import annotations
 
 import pytest
 
-from harness.budget.tool_counter import ToolBudgetStatus, ToolCallCounter
+from grafted.budget.tool_counter import ToolBudgetStatus, ToolCallCounter
 
 
 class TestToolCallCounter:

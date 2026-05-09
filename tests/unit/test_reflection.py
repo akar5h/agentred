@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from harness.core.enums import FailureReason, Status
-from harness.core.schemas import JudgeResult
-from harness.reflection.controller import ReflectionController
+from grafted.core.enums import FailureReason, Status
+from grafted.core.schemas import JudgeResult
+from grafted.reflection.controller import ReflectionController
 
 
 def make_result(status, notes=None, flags=None):

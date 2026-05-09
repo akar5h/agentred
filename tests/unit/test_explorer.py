@@ -7,9 +7,9 @@ import pytest
 
 from unittest.mock import AsyncMock
 
-from harness.core.schemas import ClassificationResult, ExplorationTask, SurfaceSignal
-from harness.explorer.explorer import Explorer
-from harness.explorer.llm_classifier import LlmResponseClassifier
+from grafted.core.schemas import ClassificationResult, ExplorationTask, SurfaceSignal
+from grafted.explorer.explorer import Explorer
+from grafted.explorer.llm_classifier import LlmResponseClassifier
 
 
 class FakeVictim:

@@ -1,7 +1,7 @@
 """Integration smoke test for TRD-17 agentic MUZZLE cycle.
 
 Requires a running mock victim server:
-    uvicorn harness.victim.mock.app:app --port 8001
+    uvicorn grafted.victim.mock.app:app --port 8001
 
 Run with:
     pytest tests/integration/test_agentic_smoke.py -m integration -x --tb=short
@@ -38,18 +38,18 @@ async def test_agentic_muzzle_smoke_scripted():
     import tempfile
     from pathlib import Path
 
-    from harness.attack.synthesis.static_strategy import StaticStrategy
-    from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
-    from harness.campaign.runner import CampaignRunner
-    from harness.core.schemas import ExplorationTask, RunConfig
-    from harness.oracle.judge import Judge
-    from harness.oracle.pattern_oracle import PatternOracle
-    from harness.telemetry.emitter import TelemetryEmitter
-    from harness.victim.api_adapter import RestApiAdapter
+    from grafted.attack.synthesis.static_strategy import StaticStrategy
+    from grafted.campaign.muzzle_orchestrator import MuzzleOrchestrator
+    from grafted.campaign.runner import CampaignRunner
+    from grafted.core.schemas import ExplorationTask, RunConfig
+    from grafted.oracle.judge import Judge
+    from grafted.oracle.pattern_oracle import PatternOracle
+    from grafted.telemetry.emitter import TelemetryEmitter
+    from grafted.victim.api_adapter import RestApiAdapter
 
     victim = RestApiAdapter(MOCK_URL)
     config = RunConfig(
-        catalog_path="harness/attack/library/direct/direct_chat_injection_v1.json",
+        catalog_path="grafted/attack/library/direct/direct_chat_injection_v1.json",
         base_url=MOCK_URL,
         max_muzzle_cycles=1,
         top_k_vessels=2,

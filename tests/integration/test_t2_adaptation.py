@@ -12,15 +12,15 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from harness.attack.synthesis.static_strategy import StaticStrategy
-from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
-from harness.campaign.runner import CampaignRunner
-from harness.core.schemas import AgenticCycleOutput, ExplorationTask, RunConfig
-from harness.oracle.judge import Judge
-from harness.oracle.pattern_oracle import PatternOracle
-from harness.telemetry.emitter import TelemetryEmitter
-from harness.victim.api_adapter import RestApiAdapter
-from harness.victim.mock.app import app
+from grafted.attack.synthesis.static_strategy import StaticStrategy
+from grafted.campaign.muzzle_orchestrator import MuzzleOrchestrator
+from grafted.campaign.runner import CampaignRunner
+from grafted.core.schemas import AgenticCycleOutput, ExplorationTask, RunConfig
+from grafted.oracle.judge import Judge
+from grafted.oracle.pattern_oracle import PatternOracle
+from grafted.telemetry.emitter import TelemetryEmitter
+from grafted.victim.api_adapter import RestApiAdapter
+from grafted.victim.mock.app import app
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -35,7 +35,7 @@ async def mock_orch(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     engagement_id = f"t2-{uuid.uuid4().hex[:8]}"
     cfg = RunConfig(
-        catalog_path="harness/attack/library/direct/direct_chat_injection_v1.json",
+        catalog_path="grafted/attack/library/direct/direct_chat_injection_v1.json",
         base_url="http://test",
         engagement_id=engagement_id,
         max_muzzle_cycles=2,
@@ -131,7 +131,7 @@ async def test_convergence_stops_loop(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     engagement_id = f"t2-conv-{uuid.uuid4().hex[:8]}"
     cfg = RunConfig(
-        catalog_path="harness/attack/library/direct/direct_chat_injection_v1.json",
+        catalog_path="grafted/attack/library/direct/direct_chat_injection_v1.json",
         base_url="http://test",
         engagement_id=engagement_id,
         max_muzzle_cycles=5,
@@ -162,7 +162,7 @@ async def test_convergence_stops_loop(tmp_path, monkeypatch) -> None:
 
 async def test_explorer_tasks_differ_between_cycles(mock_orch, caplog) -> None:
     orch, cfg, tmp_path = mock_orch
-    with caplog.at_level(logging.INFO, logger="harness.campaign.muzzle_orchestrator"):
+    with caplog.at_level(logging.INFO, logger="grafted.campaign.muzzle_orchestrator"):
         results = await orch.run(TASKS)
 
     if len(results) < 2:

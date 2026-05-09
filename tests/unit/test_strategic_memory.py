@@ -1,4 +1,4 @@
-"""Tests for harness.memory.strategic — StrategicMemory, SurfaceStats, etc."""
+"""Tests for grafted.memory.strategic — StrategicMemory, SurfaceStats, etc."""
 from __future__ import annotations
 
 import json
@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 import pytest
 
-from harness.core.enums import AttackSurface, Status
-from harness.memory.strategic import StrategicMemory, SurfaceStats, TechniqueStats, WinningTurn
-from harness.memory.working import WorkingMemory
+from grafted.core.enums import AttackSurface, Status
+from grafted.memory.strategic import StrategicMemory, SurfaceStats, TechniqueStats, WinningTurn
+from grafted.memory.working import WorkingMemory
 from tests.conftest import make_result as _base_result, make_spec as _base_spec
 
 
@@ -206,13 +206,13 @@ class TestRationaleStats:
         assert sm.rationale_accuracy("direct_chat") == 0.0
 
     def test_rationale_accuracy_computed_correctly(self):
-        from harness.memory.strategic import RationaleStats
+        from grafted.memory.strategic import RationaleStats
         sm = StrategicMemory()
         sm.rationale_stats["direct_chat"] = RationaleStats(attempts=4, confirmed=3)
         assert sm.rationale_accuracy("direct_chat") == pytest.approx(0.75)
 
     def test_rationale_stats_persisted_in_serialization(self, tmp_path, monkeypatch):
-        from harness.memory.strategic import RationaleStats
+        from grafted.memory.strategic import RationaleStats
         monkeypatch.chdir(tmp_path)
         sm = StrategicMemory(engagement_id="test-rat")
         sm.rationale_stats["tool_schema"] = RationaleStats(attempts=2, confirmed=1)

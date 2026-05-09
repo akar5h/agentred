@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.attack.fixtures.render import load_and_render_fixture_bytes, render_template_text
+from grafted.attack.fixtures.render import load_and_render_fixture_bytes, render_template_text
 
 
 def test_render_replaces_canary_token() -> None:

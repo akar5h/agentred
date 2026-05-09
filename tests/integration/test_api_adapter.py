@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from harness.victim.api_adapter import RestApiAdapter
-from harness.victim.mock.app import app
+from grafted.victim.api_adapter import RestApiAdapter
+from grafted.victim.mock.app import app
 
 
 @pytest.mark.asyncio

@@ -5,21 +5,21 @@ import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from harness.attack.catalog.loader import load_test_specs
-from harness.attack.synthesis.static_strategy import StaticStrategy
-from harness.campaign.runner import CampaignRunner
-from harness.core.schemas import RunConfig
-from harness.oracle.pattern_oracle import PatternOracle
-from harness.reporting.jsonl_writer import append_jsonl
-from harness.reporting.markdown_reporter import write_markdown_report
-from harness.telemetry.emitter import TelemetryEmitter
-from harness.victim.api_adapter import RestApiAdapter
-from harness.victim.mock.app import app
+from grafted.attack.catalog.loader import load_test_specs
+from grafted.attack.synthesis.static_strategy import StaticStrategy
+from grafted.campaign.runner import CampaignRunner
+from grafted.core.schemas import RunConfig
+from grafted.oracle.pattern_oracle import PatternOracle
+from grafted.reporting.jsonl_writer import append_jsonl
+from grafted.reporting.markdown_reporter import write_markdown_report
+from grafted.telemetry.emitter import TelemetryEmitter
+from grafted.victim.api_adapter import RestApiAdapter
+from grafted.victim.mock.app import app
 
 
 @pytest.mark.asyncio
 async def test_campaign_smoke_produces_jsonl(tmp_path) -> None:
-    catalog_path = "harness/attack/library/direct/direct_chat_injection_v1.json"
+    catalog_path = "grafted/attack/library/direct/direct_chat_injection_v1.json"
     _, specs = load_test_specs(catalog_path)
     specs = specs[:3]
 
@@ -61,7 +61,7 @@ async def test_campaign_smoke_produces_jsonl(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_campaign_smoke_canary_fires(tmp_path) -> None:
-    catalog_path = "harness/attack/library/direct/direct_chat_injection_v1.json"
+    catalog_path = "grafted/attack/library/direct/direct_chat_injection_v1.json"
     _, specs = load_test_specs(catalog_path)
     spec = next(s for s in specs if s.scenario_id == "CI-01")
 

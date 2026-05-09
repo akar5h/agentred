@@ -5,24 +5,24 @@ import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from harness.attack.synthesis.static_strategy import StaticStrategy
-from harness.campaign.memory_writer import build_finding_memory, write_finding_memory
-from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
-from harness.campaign.runner import CampaignRunner
-from harness.core.enums import Status, VesselKind
-from harness.core.schemas import ExplorationTask, JudgeResult, RunConfig, TestSpec as HarnessTestSpec, VesselSpec
-from harness.oracle.judge import Judge
-from harness.oracle.pattern_oracle import PatternOracle
-from harness.telemetry.emitter import TelemetryEmitter
-from harness.victim.api_adapter import RestApiAdapter
-from harness.victim.mock.app import app
+from grafted.attack.synthesis.static_strategy import StaticStrategy
+from grafted.campaign.memory_writer import build_finding_memory, write_finding_memory
+from grafted.campaign.muzzle_orchestrator import MuzzleOrchestrator
+from grafted.campaign.runner import CampaignRunner
+from grafted.core.enums import Status, VesselKind
+from grafted.core.schemas import ExplorationTask, JudgeResult, RunConfig, TestSpec as HarnessTestSpec, VesselSpec
+from grafted.oracle.judge import Judge
+from grafted.oracle.pattern_oracle import PatternOracle
+from grafted.telemetry.emitter import TelemetryEmitter
+from grafted.victim.api_adapter import RestApiAdapter
+from grafted.victim.mock.app import app
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_muzzle_cycle_produces_results(tmp_path) -> None:
     cfg = RunConfig(
-        catalog_path="harness/attack/library/direct/direct_chat_injection_v1.json",
+        catalog_path="grafted/attack/library/direct/direct_chat_injection_v1.json",
         base_url="http://test",
         engagement_id="smoke-muzzle-001",
         no_muzzle=False,

@@ -1,7 +1,7 @@
-"""Tests for harness.memory.working — WorkingMemory, VesselOutcome."""
+"""Tests for grafted.memory.working — WorkingMemory, VesselOutcome."""
 from __future__ import annotations
 
-from harness.memory.working import VesselOutcome, WorkingMemory
+from grafted.memory.working import VesselOutcome, WorkingMemory
 
 
 class TestVesselOutcome:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from harness.core.enums import AttackSurface, Status
-from harness.core.schemas import JudgeResult, TestSpec
+from grafted.core.enums import AttackSurface, Status
+from grafted.core.schemas import JudgeResult, TestSpec
 
 
 @pytest.fixture

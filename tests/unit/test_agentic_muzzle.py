@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from harness.core.enums import AttackSurface, VesselKind
-from harness.core.schemas import (
+from grafted.core.enums import AttackSurface, VesselKind
+from grafted.core.schemas import (
     ExecutionStep,
     ExplorationTask,
     ExplorationTrace,
@@ -13,9 +13,9 @@ from harness.core.schemas import (
     SummarizedTrace,
     TraceStep,
 )
-from harness.explorer.explorer import Explorer
-from harness.explorer.summarizer import Summarizer
-from harness.grafter.grafter import Grafter
+from grafted.explorer.explorer import Explorer
+from grafted.explorer.summarizer import Summarizer
+from grafted.grafter.grafter import Grafter
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ async def test_explorer_populates_debug_snapshots():
 
 
 def test_surface_prompts_cover_all_7_surfaces():
-    from harness.explorer.surface_prompts import EXPLORER_SYSTEM_PROMPT
+    from grafted.explorer.surface_prompts import EXPLORER_SYSTEM_PROMPT
 
     for surface in [
         "direct_chat",
@@ -94,7 +94,7 @@ def test_surface_prompts_cover_all_7_surfaces():
 
 
 def test_attacker_prompt_has_execute_tool():
-    from harness.explorer.surface_prompts import ATTACKER_SYSTEM_PROMPT
+    from grafted.explorer.surface_prompts import ATTACKER_SYSTEM_PROMPT
 
     assert "execute_test_spec_tool" in ATTACKER_SYSTEM_PROMPT
 
@@ -213,7 +213,7 @@ def test_grafter_external_api_candidate():
 
 @pytest.mark.asyncio
 async def test_muzzle_orchestrator_scripted_fallback():
-    from harness.campaign.muzzle_orchestrator import MuzzleCycleResult, MuzzleOrchestrator
+    from grafted.campaign.muzzle_orchestrator import MuzzleCycleResult, MuzzleOrchestrator
 
     config = RunConfig(catalog_path="", engagement_id="")
     victim = MagicMock()

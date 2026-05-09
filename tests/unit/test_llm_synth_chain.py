@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from harness.attack.synthesis.llm_synth import LlmSynthStrategy
+from grafted.attack.synthesis.llm_synth import LlmSynthStrategy
 
 
 def _make_strategy(**kwargs) -> LlmSynthStrategy:

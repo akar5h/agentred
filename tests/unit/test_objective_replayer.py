@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from harness.core.schemas import ObjectiveTask
-from harness.objective_replay.replayer import ObjectiveReplayer
+from grafted.core.schemas import ObjectiveTask
+from grafted.objective_replay.replayer import ObjectiveReplayer
 
 
 class FakeVictim:

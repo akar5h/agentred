@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from harness.core.enums import AttackSurface, FailureReason, OracleCode, Status, VesselKind
-from harness.core.schemas import (
+from grafted.core.enums import AttackSurface, FailureReason, OracleCode, Status, VesselKind
+from grafted.core.schemas import (
     JudgeResult,
     RunConfig,
     TargetProfile,

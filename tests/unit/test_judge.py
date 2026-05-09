@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from harness.core.enums import Status
-from harness.oracle.judge import Judge
-from harness.oracle.llm_oracle import LlmOracle
-from harness.oracle.pattern_oracle import PatternOracle
+from grafted.core.enums import Status
+from grafted.oracle.judge import Judge
+from grafted.oracle.llm_oracle import LlmOracle
+from grafted.oracle.pattern_oracle import PatternOracle
 
 
 @pytest.mark.asyncio

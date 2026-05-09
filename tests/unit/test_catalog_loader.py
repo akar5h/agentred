@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from harness.attack.catalog.loader import iter_attacks, load_catalog, load_test_specs
-from harness.core.enums import AttackSurface, VesselKind
-from harness.core.exceptions import CatalogError
+from grafted.attack.catalog.loader import iter_attacks, load_catalog, load_test_specs
+from grafted.core.enums import AttackSurface, VesselKind
+from grafted.core.exceptions import CatalogError
 
 
 def _write_catalog(tmp_path, payload: dict) -> str:

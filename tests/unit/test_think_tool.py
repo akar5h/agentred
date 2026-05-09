@@ -1,8 +1,8 @@
-"""Tests for harness.campaign.think_tool — ThinkLog + make_think_tool."""
+"""Tests for grafted.campaign.think_tool — ThinkLog + make_think_tool."""
 from __future__ import annotations
 
-from harness.campaign.think_tool import ThinkLog, make_think_tool
-from harness.core.schemas import ThinkStep
+from grafted.campaign.think_tool import ThinkLog, make_think_tool
+from grafted.core.schemas import ThinkStep
 
 
 # ---------------------------------------------------------------------------

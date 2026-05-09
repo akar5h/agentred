@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from harness.core.schemas import ExplorationTrace, TraceStep
-from harness.explorer.summarizer import Summarizer
+from grafted.core.schemas import ExplorationTrace, TraceStep
+from grafted.explorer.summarizer import Summarizer
 
 
 def _step(

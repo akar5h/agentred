@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from harness.core.schemas import AgenticCycleOutput
+from grafted.core.schemas import AgenticCycleOutput
 
 
 class TestAgenticCycleOutputSchema:
@@ -50,7 +50,7 @@ class TestParseAgenticOutput:
     def parser(self):
         """Create a minimal MuzzleOrchestrator just for the parser method."""
         from unittest.mock import MagicMock
-        from harness.campaign.muzzle_orchestrator import MuzzleOrchestrator
+        from grafted.campaign.muzzle_orchestrator import MuzzleOrchestrator
 
         # Access the unbound method
         return MuzzleOrchestrator._parse_agentic_output

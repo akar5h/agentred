@@ -5,7 +5,7 @@ import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from harness.victim.mock.app import app
+from grafted.victim.mock.app import app
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Tests for harness.explorer.llm_classifier — LLM-based surface classification."""
+"""Tests for grafted.explorer.llm_classifier — LLM-based surface classification."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from harness.explorer.llm_classifier import LlmResponseClassifier
+from grafted.explorer.llm_classifier import LlmResponseClassifier
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ class TestLlmClassify:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("harness.explorer.llm_classifier.httpx.AsyncClient", return_value=mock_client):
+        with patch("grafted.explorer.llm_classifier.httpx.AsyncClient", return_value=mock_client):
             c = LlmResponseClassifier()
             result = await c.classify("## File Upload Support\nI can parse resumes and search the web.")
 
@@ -120,7 +120,7 @@ class TestLlmClassify:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("harness.explorer.llm_classifier.httpx.AsyncClient", return_value=mock_client):
+        with patch("grafted.explorer.llm_classifier.httpx.AsyncClient", return_value=mock_client):
             c = LlmResponseClassifier()
             result = await c.classify("I can fetch data from external APIs.")
 
@@ -164,7 +164,7 @@ class TestLlmClassify:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("harness.explorer.llm_classifier.httpx.AsyncClient", return_value=mock_client):
+        with patch("grafted.explorer.llm_classifier.httpx.AsyncClient", return_value=mock_client):
             c = LlmResponseClassifier()
             result = await c.classify("I cannot share that information with you.")
 

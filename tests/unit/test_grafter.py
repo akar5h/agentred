@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from harness.core.enums import VesselKind
-from harness.core.schemas import (
+from grafted.core.enums import VesselKind
+from grafted.core.schemas import (
     AttackCatalogFile,
     CatalogEntry,
     ExecutionStep,
@@ -10,7 +10,7 @@ from harness.core.schemas import (
     SummarizedTrace,
     VesselCandidate,
 )
-from harness.grafter.grafter import Grafter
+from grafted.grafter.grafter import Grafter
 
 
 def _trace(*steps: ExecutionStep) -> SummarizedTrace:
@@ -105,8 +105,8 @@ def test_build_suite_populates_rationale_and_predicted_codes() -> None:
 
 
 def test_build_suite_injects_avoid_block_when_failed_attacks_exist() -> None:
-    from harness.memory.strategic import StrategicMemory
-    from harness.core.enums import AttackSurface
+    from grafted.memory.strategic import StrategicMemory
+    from grafted.core.enums import AttackSurface
 
     sm = StrategicMemory()
     sm.record_failed_attack("direct_chat", "Previous failed turn text")
