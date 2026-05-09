@@ -29,7 +29,6 @@ from harness.reporting.markdown_reporter import write_markdown_report
 from harness.telemetry.emitter import TelemetryEmitter
 from harness.telemetry.langfuse_exporter import LangfuseExporter
 from harness.victim.api_adapter import RestApiAdapter
-from harness.victim.doc_ai_adapter import DocAiAdapter
 
 
 def _parse_args() -> argparse.Namespace:
@@ -43,7 +42,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario-filter", default="", help="Comma-separated scenario IDs")
     parser.add_argument("--run-dir", default="", help="Output directory")
     parser.add_argument("--target-mode", default="chat", choices=["chat", "stream"])
-    parser.add_argument("--doc-ai", action="store_true", help="Use DocAiAdapter (for Document AI / RAG target)")
     # MUZZLE flags
     parser.add_argument(
         "--engagement-id",
@@ -163,7 +161,7 @@ async def _run(args: argparse.Namespace) -> int:
         target_mode=args.target_mode,
         runs_per_scenario=max(1, int(args.runs_per_scenario)),
         adaptive=bool(args.adaptive),
-        timeout_seconds=300.0 if args.doc_ai else 120.0,
+        timeout_seconds=120.0,
         attacker_model=str(args.attacker_model),
         analyst_enabled=not bool(args.no_analyst),
         run_dir=str(run_dir),
@@ -185,10 +183,7 @@ async def _run(args: argparse.Namespace) -> int:
     run_meta = run_dir / "run_meta.json"
     telemetry_jsonl = run_dir / "telemetry.jsonl"
 
-    if args.doc_ai:
-        victim = DocAiAdapter(base_url=config.base_url)
-    else:
-        victim = RestApiAdapter(base_url=config.base_url, mode=config.target_mode)
+    victim = RestApiAdapter(base_url=config.base_url, mode=config.target_mode)
     if args.adaptive:
         api_key = os.getenv(config.attacker_api_key_env, "").strip()
         if not api_key:
