@@ -29,6 +29,7 @@ grafted = "grafted.cli:main"
 
 [project.optional-dependencies]
 observability = ["langfuse>=3.0"]
+agentdojo = ["agentdojo>=0.1"]
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23"
