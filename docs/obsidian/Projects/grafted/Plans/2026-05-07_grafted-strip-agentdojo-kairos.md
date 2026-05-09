@@ -223,48 +223,56 @@ This avoids a massive simultaneous refactor in phase 3 and lets phase 2 land in 
 
 ## Phase 2 — AgentDojo plumbing (target: 8h)
 
+> **API reconnaissance findings (2026-05-07, before phase 2 starts):**
+>
+> Cloned AgentDojo (commit on master) and read `src/agentdojo/attacks/base_attacks.py`, `src/agentdojo/benchmark.py`, `src/agentdojo/base_tasks.py`. The plan as originally written had two inaccuracies that change the shape of phase 2:
+>
+> 1. **The integration is a `BaseAttack` subclass, not a `VictimAdapter`.** AgentDojo's attack contract is `BaseAttack.attack(user_task, injection_task) -> dict[str, str]` mapping injection placeholder vector_ids to attack strings. There can be **multiple placeholders per (user_task, injection_task) pair** (see `BaseAttack.get_injection_candidates()`). `BaseAttack.__init__(task_suite, target_pipeline)` — both available for reconnaissance if we ever want it.
+> 2. **AgentDojo's standard benchmark already interleaves attack-gen with execution.** `benchmark_suite_with_injections` in `benchmark.py` calls `attack.attack(...)` per (user, injection) pair *inside* the benchmark loop (line 84), runs the agent immediately after (lines 117-119), and persists `(utility, security)` results via `TraceLogger` to logdir. Cross-pair memory updates can be done by reading logdir entries from prior pairs at the start of each `attack()` call. **No need to fork the benchmark loop.**
+>
+> Implications: phase 2.1 (registry) and phase 2.4 (ablation harness) shape unchanged. Phase 2.2 is now `GraftedAttack(BaseAttack)` not `AgentDojoAdapter(VictimAdapter)`. Phase 2.3 simplifies (no custom benchmark loop needed; just memory load/save inside `attack()` and a logdir reader for prior verdicts).
+
 ### 2.1 — Adapter registry (2h)
 
 - New file `grafted/victim/registry.py` with a `register(name)` decorator and a `get(name) -> VictimAdapter` lookup
-- Built-in registrations: `http` → `RestApiAdapter`, `agentdojo` → `AgentDojoAdapter` (after 2.2)
+- Built-in registrations: `http` → `RestApiAdapter`. (No `agentdojo` entry here — the AgentDojo integration is a `BaseAttack` subclass, not a `VictimAdapter`. Lives in `grafted/integrations/agentdojo/` instead.)
 - Custom escape hatch: `--adapter custom:my_pkg.MyAdapter` parsed in `scripts/run_campaign.py`
 - Replace any remaining adapter dispatch in `_run()` with `victim = registry.build(args.adapter, args)`
 
-### 2.2 — `AgentDojoAdapter` (4h)
+### 2.2 — `GraftedAttack(BaseAttack)` (4h)
 
-New file: `grafted/victim/agentdojo_adapter.py`. Responsibilities:
+New file: `grafted/integrations/agentdojo/attack.py`. Class `GraftedAttack(BaseAttack)`:
 
-- Implement AgentDojo's `AttackPipeline.attack(user_task, injection_task) -> dict[str, str]`
-- For each call:
-  1. Compute `engagement_id` from `--memory-scope` (`f"agentdojo-{suite}-{victim_model}"` for per-suite, etc.)
-  2. Load `StrategicMemory` from disk (path keyed by engagement_id)
-  3. Open a `kairos.integrations.task` boundary with metadata `{suite, user_task_id, injection_task_id, victim_model, engagement_id, memory_scope}`
-  4. Run **one** MUZZLE cycle scoped to this pair:
-     - Skip Explorer (AgentDojo stipulates the surface)
-     - Set `ObjectiveScript.imperative` from `injection_task.GOAL` / description
-     - Set `ObjectiveScript.context_hint` from `user_task` description
-     - Run synthesis via `LlmSynthStrategy.next_turn(...)` with strategic memory loaded
-     - Capture the output string
-  5. Write attack string to AgentDojo's expected placeholder dict
-  6. Update `StrategicMemory` from the resulting `JudgeResult` (will require AgentDojo's eval result to flow back — see 2.3)
-  7. Persist `StrategicMemory` to disk
-- Implement other `VictimAdapter` abstract methods (`send_turn`, `upload_file`, `list_docs`, `reset_session`) as no-ops or proxies, since this adapter doesn't drive a victim — AgentDojo does
+- Inherits AgentDojo's `BaseAttack`. Honors `__init__(task_suite, target_pipeline)`.
+- `name = "grafted"` so AgentDojo's logging/registry tags work.
+- Constructor extras: `memory_scope: str = "per-suite"`, `memory_dir: Path = Path("data/grafted/memory/")`, `attacker_model: str`, `attacker_api_key: str`. Compute `engagement_id` from `(memory_scope, suite_name, victim_model)`.
+- `attack(user_task, injection_task)` flow:
+  1. Read prior verdicts from AgentDojo's logdir (if available) and update in-memory `StrategicMemory` accordingly. Idempotent — only consume entries newer than last seen.
+  2. Open a `kairos.integrations.task` boundary with metadata `{suite, user_task_id: user_task.ID, injection_task_id: injection_task.ID, victim_model, engagement_id, memory_scope}` (phase 3 wires this in; for phase 2 it's a no-op span).
+  3. Compute placeholders: `placeholders = self.get_injection_candidates(user_task)`.
+  4. For each placeholder, call grafted's synthesis with:
+     - `imperative = injection_task.GOAL`
+     - `context_hint = user_task.PROMPT`
+     - `current_surface = "indirect_text"` (or derived from the placeholder name if AgentDojo encodes one)
+     - Loaded `StrategicMemory` (winning turns, technique stats, behavioral patterns)
+  5. Persist `StrategicMemory` to `memory_dir / f"{engagement_id}.json"` after the call.
+  6. Return dict[placeholder → attack_string].
+- No `VictimAdapter` methods needed — this isn't a victim, it's an attack producer.
 
-### 2.3 — Memory persistence + cross-pair learning loop (1.5h)
+### 2.3 — Memory persistence + verdict harvest (1.5h)
 
-- Verify `StrategicMemory` round-trips via JSON (already serializes per `grafted/memory/strategic.py` — confirm with a unit test)
-- Add `--memory-scope` flag to `scripts/run_campaign.py`: `per-suite | per-model | per-pair`, default `per-suite`
-- Add `--memory-dir` flag for the on-disk location (default: `data/grafted/memory/`)
-- Wrapper benchmark runner `scripts/run_agentdojo.py` that:
-  - Iterates AgentDojo `(user_task, injection_task)` pairs
-  - Calls `AgentDojoAdapter.attack()` for each
-  - Calls AgentDojo's evaluator
-  - Feeds the verdict back into `StrategicMemory.update_from_result(...)`
-  - Saves memory before next pair
+- Verify `StrategicMemory` round-trips via JSON (confirm with a unit test in `tests/unit/test_strategic_memory.py` — already exists; add a round-trip case).
+- New `grafted/integrations/agentdojo/verdict_harvest.py`: a function `harvest_logdir(logdir, suite, attack_name) -> Iterator[(user_task_id, injection_task_id, utility, security)]` that walks AgentDojo's logdir and yields prior pair results. Used by `GraftedAttack.attack()` step 1.
+- Add `--memory-scope` and `--memory-dir` flags to `scripts/run_agentdojo.py` (new runner — see below).
+- New `scripts/run_agentdojo.py`: thin wrapper that:
+  - Imports `GraftedAttack`, AgentDojo's `TaskSuite`, agent pipeline factory
+  - Builds `attack = GraftedAttack(suite, pipeline, memory_scope=..., memory_dir=...)`
+  - Calls AgentDojo's stock `benchmark_suite_with_injections(pipeline, suite, attack, logdir, force_rerun=False)`
+  - Writes a per-engagement summary CSV alongside
 
 ### 2.4 — Pre-flight experiment harness (30min)
 
-- `scripts/run_agentdojo_ablation.py` that runs the workspace suite twice on the same model, once with `per-suite`, once with `per-pair`, and writes a comparison CSV
+- `scripts/run_agentdojo_ablation.py` that runs the workspace suite twice on the same model, once with `--memory-scope per-suite`, once with `--memory-scope per-pair`, and writes a comparison CSV (ASR per (user, injection) pair, plus aggregate)
 - Runs against ~10 pairs first for fast feedback before committing to full suite
 
 ### Phase 2 done condition
