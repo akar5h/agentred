@@ -28,7 +28,7 @@ from grafted.reporting.csv_writer import STANDARD_COLUMNS, write_csv
 from grafted.reporting.jsonl_writer import append_jsonl
 from grafted.reporting.markdown_reporter import write_markdown_report
 from grafted.telemetry.emitter import TelemetryEmitter
-from grafted.victim.api_adapter import RestApiAdapter
+from grafted.victim import registry as victim_registry
 
 
 def _parse_args() -> argparse.Namespace:
@@ -42,6 +42,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario-filter", default="", help="Comma-separated scenario IDs")
     parser.add_argument("--run-dir", default="", help="Output directory")
     parser.add_argument("--target-mode", default="chat", choices=["chat", "stream"])
+    parser.add_argument(
+        "--adapter",
+        default="http",
+        help="Victim adapter (built-in name or 'custom:module.Class'). Run --list-adapters to see built-ins.",
+    )
     # MUZZLE flags
     parser.add_argument(
         "--engagement-id",
@@ -106,7 +111,7 @@ async def _run(args: argparse.Namespace) -> int:
     run_meta = run_dir / "run_meta.json"
     telemetry_jsonl = run_dir / "telemetry.jsonl"
 
-    victim = RestApiAdapter(base_url=config.base_url, mode=config.target_mode)
+    victim = victim_registry.build(args.adapter, base_url=config.base_url, target_mode=config.target_mode)
     if args.adaptive:
         api_key = os.getenv(config.attacker_api_key_env, "").strip()
         if not api_key:
