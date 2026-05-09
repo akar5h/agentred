@@ -1,4 +1,9 @@
-"""Optional Langfuse integration for LLM call tracing and telemetry export.
+"""DEPRECATED — disconnected in phase 1.5; deletion pending phase 3.7.
+
+Replaced by kairos + Phoenix (OpenTelemetry-based). No longer imported
+by any active code path. See docs/obsidian/Projects/grafted/Plans/.
+
+Optional Langfuse integration for LLM call tracing and telemetry export.
 
 Uses Langfuse v3 singleton client pattern. Activated when LANGFUSE_PUBLIC_KEY,
 LANGFUSE_SECRET_KEY, and LANGFUSE_BASE_URL are set in the environment.

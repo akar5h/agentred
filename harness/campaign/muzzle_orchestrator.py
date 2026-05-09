@@ -40,7 +40,6 @@ from harness.memory.strategic import StrategicMemory
 from harness.memory.working import WorkingMemory
 from harness.objective_replay.replayer import MVP_GOALS, ObjectiveReplayer
 from harness.triage.bandit import SurfaceBandit
-from harness.telemetry.langfuse_exporter import LangfuseExporter
 from harness.victim.base import VictimAdapter
 
 logger = logging.getLogger("harness.campaign.muzzle_orchestrator")
@@ -344,9 +343,6 @@ class MuzzleOrchestrator:
         self.strategic_memory = StrategicMemory.load(engagement) if engagement else StrategicMemory()
         self.working_memory = WorkingMemory(cycle=0)
 
-        # Langfuse observability (optional — None when not configured)
-        self._langfuse = LangfuseExporter.from_env()
-
         # Bandit triage
         self.bandit = SurfaceBandit.load(engagement) if engagement else SurfaceBandit()
 
@@ -384,17 +380,9 @@ class MuzzleOrchestrator:
         For OpenRouter models (containing '/'), creates ChatOpenAI with
         OpenRouter base_url. For provider-prefixed models (e.g. 'anthropic:...'),
         uses init_chat_model directly.
-
-        When Langfuse is configured, a CallbackHandler is attached automatically.
         """
         api_key = os.getenv(self.config.attacker_api_key_env, "").strip()
         callbacks: list = []
-        if self._langfuse:
-            handler = self._langfuse.get_langchain_handler(
-                session_id=self.config.engagement_id or None,
-            )
-            if handler:
-                callbacks.append(handler)
 
         if "/" in model_str and not model_str.startswith(("openai:", "anthropic:")):
             from langchain_openai import ChatOpenAI  # pragma: no cover - optional dependency
@@ -977,9 +965,5 @@ class MuzzleOrchestrator:
             )
             if cycle > 0 and not new_surfaces and not has_hits:
                 break
-
-        # Flush Langfuse before returning so buffered events aren't lost
-        if self._langfuse:
-            self._langfuse.flush()
 
         return all_results

@@ -1,3 +1,8 @@
+"""DEPRECATED — slated for retirement in phase 3.7.
+
+Will be replaced by the kairos OTel-based event sink. Still imported by
+CampaignRunner and run_campaign.py until phase 3 wires kairos in.
+"""
 from __future__ import annotations
 
 import logging
