@@ -28,7 +28,15 @@ include = ["grafted*"]
 grafted = "grafted.cli:main"
 
 [project.optional-dependencies]
-observability = ["langfuse>=3.0"]
+observability = [
+  # Kairos is proprietary / not on PyPI — install editable from local checkout:
+  #   pip install -e /Users/akarshgajbhiye/kairos
+  # The deps below match the tau-agent pattern: Phoenix's own OTel helper
+  # plus OpenInference's OpenAI auto-instrumentation. No Traceloop SaaS.
+  "arize-phoenix-otel>=0.12",
+  "openinference-instrumentation-openai>=0.1",
+  "langfuse>=3.0",  # legacy; retire when telemetry/langfuse_exporter is removed
+]
 agentdojo = ["agentdojo>=0.1"]
 dev = [
   "pytest>=8.0",

@@ -81,6 +81,13 @@ def _parse_args() -> argparse.Namespace:
         "'tool_filter' adds an extra LLM filter call. "
         "'transformers_pi_detector' requires HF transformers dependencies.",
     )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="Enable kairos/OTel tracing: install_kairos() before LLM calls, wrap each pair "
+        "in a 'kairos.task' span with memory + synthesis diagnostic attributes. "
+        "Requires the [observability] extra and Phoenix running on localhost:6006.",
+    )
     return parser.parse_args()
 
 
@@ -139,6 +146,13 @@ def _build_llm_for_pipeline_config(provider: str, victim_model: str):
 
 def main() -> int:
     args = _parse_args()
+
+    # Install OTel/Traceloop BEFORE importing AgentDojo or constructing any
+    # LLM client — Traceloop patches openai/anthropic at import time, so
+    # later patching would miss already-imported call sites.
+    if args.trace:
+        from grafted.integrations.kairos_setup import install_kairos
+        install_kairos()
 
     try:
         from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, PipelineConfig

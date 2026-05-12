@@ -316,16 +316,26 @@ class LlmSynthStrategy(AttackStrategy):
             "X-Title": "grafted",
         }
 
+        # Diagnostic: store last request/response on self so a wrapping span
+        # in GraftedAttack.attack() can pick them up. Cleared at each call.
+        self._last_call_status: int | None = None
+        self._last_call_body_preview: str = ""
+        self._last_call_exc: str | None = None
+        self._last_user_msg_preview: str = user_message[:500]
+
         try:
             async with httpx.AsyncClient(timeout=max(20.0, self.cooldown_seconds + 20.0)) as client:
                 resp = await client.post(self.endpoint, headers=headers, json=payload)
+            self._last_call_status = resp.status_code
+            self._last_call_body_preview = (resp.text or "")[:1000]
             if resp.status_code == 429 and self.disable_on_rate_limit:
                 self._disabled = True
                 return ""
             resp.raise_for_status()
             data = resp.json()
             return str(data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
-        except Exception:
+        except Exception as exc:
+            self._last_call_exc = f"{type(exc).__name__}: {exc}"
             return ""
 
     def _build_winning_turns_block(
