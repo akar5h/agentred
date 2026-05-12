@@ -366,9 +366,15 @@ class LlmSynthStrategy(AttackStrategy):
         if not relevant:
             return ""
 
+        # Slice cap matches strategic.WINNING_TURNS_CAP so storage and prompt
+        # budget are consistent. Tested at N=10 on banking; ASR dropped 18pp
+        # (attacker over-anchored on the larger exemplar set instead of
+        # innovating). Reverted to N=3 default; revisit only with smarter
+        # exemplar selection (similarity-weighted, not just recency).
+        from grafted.memory.strategic import WINNING_TURNS_CAP
         return (
             "Prior turns that succeeded on this surface (use as stylistic reference):\n"
-            + "\n---\n".join(relevant[:2])
+            + "\n---\n".join(relevant[:WINNING_TURNS_CAP])
         )
 
     def _format_recent_transcript(self, transcript: List[Dict[str, Any]]) -> str:

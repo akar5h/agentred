@@ -9,6 +9,13 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger("grafted.memory.strategic")
 
+# Per-surface cap on retained winning_turns. The attacker LLM sees these as
+# exemplars during synthesis (via FindingMemory → _build_winning_turns_block).
+# Empirically tested at N=10 on banking and it HURT ASR by ~18pp (more
+# exemplars caused the attacker to over-anchor on the same style instead
+# of innovating). Reverted to 3 — the original conservative default.
+WINNING_TURNS_CAP = 3
+
 if TYPE_CHECKING:
     from grafted.core.schemas import JudgeResult, TestSpec
     from grafted.memory.working import WorkingMemory
@@ -100,8 +107,11 @@ class StrategicMemory:
                 cycle=cycle,
                 technique=technique,
             ))
-            # Keep top-3 by recency
-            self.winning_turns[surface] = wt_list[-3:]
+            # Keep top-N by recency. Bumped from 3 → 10 after the banking
+            # ablation showed 0pp memory effect on a non-saturated baseline;
+            # 3 exemplars is a thin signal, especially when injection_tasks
+            # span multiple action categories (banking has 9 distinct types).
+            self.winning_turns[surface] = wt_list[-WINNING_TURNS_CAP:]
 
     def record_behavioral_pattern(self, pattern: str) -> None:
         if pattern and pattern not in self.behavioral_patterns:

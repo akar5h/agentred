@@ -468,9 +468,11 @@ class GraftedAttack(BaseAttack):
                     cycle=self._win_counter,
                     technique="llm_synth",
                 ))
-            # Keep top-3 by recency, matching path A's policy in
-            # StrategicMemory.update_from_result.
-            self.memory.winning_turns[SURFACE_LABEL] = wt_list[-3:]
+            # Keep top-N by recency, matching path A's policy in
+            # StrategicMemory.update_from_result. N is configured at
+            # strategic.WINNING_TURNS_CAP.
+            from grafted.memory.strategic import WINNING_TURNS_CAP
+            self.memory.winning_turns[SURFACE_LABEL] = wt_list[-WINNING_TURNS_CAP:]
 
             ts = self.memory.technique_stats.setdefault("llm_synth", TechniqueStats())
             ts.successes += 1
