@@ -69,6 +69,24 @@ def _set_attr(span, key: str, value) -> None:
         pass
 
 
+def _yaml_safe_payload(s: str) -> str:
+    """Sanitize a synthesized payload so AgentDojo can splice it into its
+    YAML environment template and round-trip through yaml.safe_load.
+
+    AgentDojo does naive text substitution of {placeholder} into the raw
+    YAML doc, then re-parses. Strings containing unescaped double quotes
+    or backticks break the parser because the YAML field is itself
+    double-quoted. The static <INFORMATION> seed template avoids these
+    chars; an LLM-synthesized payload routinely includes them.
+
+    Cheapest fix: swap `"` → `'` and strip backticks. Preserves intent,
+    loses a sliver of expressiveness, keeps the run alive on every pair.
+    """
+    if not s:
+        return s
+    return s.replace('"', "'").replace("`", "")
+
+
 def _summarize_finding_memory(items) -> str:
     """Compact one-line summary of what was passed to synthesis. Goes onto
     the span as a string so it's diffable in Phoenix between scopes."""
@@ -278,7 +296,7 @@ class GraftedAttack(BaseAttack):
                     raw_error = f"{type(exc).__name__}: {exc}"
                 if raw_mutated_first is None:
                     raw_mutated_first = mutated
-                injections[placeholder] = mutated or base_turn
+                injections[placeholder] = _yaml_safe_payload(mutated or base_turn)
 
             # Diagnostic attributes that bypass the `or base_turn` shortcut so
             # we can see what next_turn() actually returned, not just what
