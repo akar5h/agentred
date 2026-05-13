@@ -35,6 +35,7 @@ except ImportError as exc:  # pragma: no cover - optional dependency
     ) from exc
 
 from grafted.attack.synthesis.llm_synth import LlmSynthStrategy
+from grafted.attack.strategy_library import Strategy, StrategyLibrary
 from grafted.core.schemas import FindingMemory
 from grafted.memory.strategic import StrategicMemory
 
@@ -166,6 +167,7 @@ class GraftedAttack(BaseAttack):
         attacker_api_key_env: str = "OPENROUTER_API_KEY",
         memory_dir: Optional[Path] = None,
         verdict_harvester: Optional["VerdictHarvester"] = None,
+        strategy_library: Optional["StrategyLibrary"] = None,
     ) -> None:
         super().__init__(task_suite, target_pipeline)
 
@@ -197,6 +199,13 @@ class GraftedAttack(BaseAttack):
             model_name=self.attacker_model,
         )
         self.verdict_harvester = verdict_harvester
+        # Pattern-2: optional pre-trained strategy library. When provided,
+        # attack() does a library lookup BEFORE the live LlmSynth call and
+        # returns an instantiated template (zero attacker-LLM calls) if a
+        # matching strategy is found. Otherwise falls through to the live
+        # synth path. Library is per-suite, loaded from
+        # data/grafted/strategy_library/{suite}.json by the runner.
+        self.strategy_library = strategy_library
 
         # Pending payloads keyed by scenario_id ("{user}__{inj}") so when
         # AgentDojo's verdict for that pair arrives via the harvester one
@@ -294,24 +303,56 @@ class GraftedAttack(BaseAttack):
             _set_attr(span, "synthesis.strategy_fallback_model",
                       getattr(self.strategy, "fallback_model_name", "?"))
 
+            # Pattern-2 library lookup: if a per-suite strategy library was
+            # loaded, try it first. On hit, instantiate the strategy and
+            # skip the live LlmSynth call entirely (zero attacker-LLM cost).
+            # On miss, fall through to the original synth path.
+            library_strategy: Strategy | None = None
+            if self.strategy_library is not None:
+                library_strategy = self.strategy_library.best_for(
+                    surface=SURFACE_LABEL,
+                    # tool and technique filters are not used in v1 — the
+                    # library is per-suite already, and we let the
+                    # highest-training_asr strategy win regardless of tool
+                    tool=None,
+                    technique=None,
+                )
+            _set_attr(span, "synthesis.library_hit", library_strategy is not None)
+            if library_strategy is not None:
+                _set_attr(span, "synthesis.library_strategy_id", library_strategy.id)
+                _set_attr(span, "synthesis.library_strategy_training_asr",
+                          float(library_strategy.training_asr))
+
             raw_mutated_first: str | None = None
             raw_error: str | None = None
             for placeholder in placeholders:
-                try:
-                    mutated = asyncio.run(
-                        self.strategy.next_turn(
-                            scenario_id=scenario_id,
-                            objective=injection_task.GOAL,
-                            base_turn=base_turn,
-                            transcript=[],
-                            finding_memory=finding_memory,
-                            current_surface=SURFACE_LABEL,
-                            current_technique=None,
+                mutated: str | None = None
+                if library_strategy is not None:
+                    # Instantiate the library strategy. Context maps the
+                    # AgentDojo runtime values into the strategy's
+                    # placeholders.
+                    context = {
+                        "goal": injection_task.GOAL,
+                        "user_name": "Emma Johnson",
+                        "model_name": "AI assistant",
+                    }
+                    mutated = library_strategy.instantiate(context)
+                else:
+                    try:
+                        mutated = asyncio.run(
+                            self.strategy.next_turn(
+                                scenario_id=scenario_id,
+                                objective=injection_task.GOAL,
+                                base_turn=base_turn,
+                                transcript=[],
+                                finding_memory=finding_memory,
+                                current_surface=SURFACE_LABEL,
+                                current_technique=None,
+                            )
                         )
-                    )
-                except Exception as exc:
-                    mutated = None
-                    raw_error = f"{type(exc).__name__}: {exc}"
+                    except Exception as exc:
+                        mutated = None
+                        raw_error = f"{type(exc).__name__}: {exc}"
                 if raw_mutated_first is None:
                     raw_mutated_first = mutated
                 injections[placeholder] = _yaml_safe_payload(mutated or base_turn)

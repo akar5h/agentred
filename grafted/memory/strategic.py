@@ -59,6 +59,13 @@ class StrategicMemory:
     cycle_summaries: list[str] = field(default_factory=list)
     rationale_stats: dict[str, RationaleStats] = field(default_factory=dict)
     failed_attacks: dict[str, list[str]] = field(default_factory=dict)
+    # Pattern-2 strategy library snapshot. Stores serialized Strategy dicts
+    # (NOT Strategy objects) to keep this module free of circular imports
+    # with grafted.attack.strategy_library. List of dicts is sufficient for
+    # provenance / cross-run reuse; runtime lookup goes through the
+    # standalone StrategyLibrary JSON file (data/grafted/strategy_library/
+    # {suite}.json) loaded by GraftedAttack at init time.
+    strategies: list[dict] = field(default_factory=list)
 
     # ------------------------------------------------------------------
     # Update helpers
@@ -198,6 +205,7 @@ class StrategicMemory:
                 for k, v in self.rationale_stats.items()
             },
             "failed_attacks": self.failed_attacks,
+            "strategies": self.strategies,
         }
 
     @classmethod
@@ -214,4 +222,5 @@ class StrategicMemory:
         for k, v in data.get("rationale_stats", {}).items():
             sm.rationale_stats[k] = RationaleStats(**v)
         sm.failed_attacks = {k: list(v) for k, v in data.get("failed_attacks", {}).items()}
+        sm.strategies = list(data.get("strategies", []))
         return sm

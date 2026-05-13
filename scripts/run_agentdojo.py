@@ -88,6 +88,24 @@ def _parse_args() -> argparse.Namespace:
         "in a 'kairos.task' span with memory + synthesis diagnostic attributes. "
         "Requires the [observability] extra and Phoenix running on localhost:6006.",
     )
+    parser.add_argument(
+        "--strategy-library",
+        default="",
+        help="Path to a pre-trained per-suite Strategy library JSON "
+        "(e.g., data/grafted/strategy_library/workspace.json). When set, "
+        "GraftedAttack does a library lookup before invoking the live "
+        "LlmSynth attacker — zero attacker-LLM calls if a strategy matches. "
+        "Only applies with --attack grafted.",
+    )
+    parser.add_argument(
+        "--eval-split",
+        default="all",
+        choices=["all", "train", "test"],
+        help="Restrict the injection_tasks evaluated to the train or test "
+        "half of the deterministic split (seed=42, sorted by numeric suffix). "
+        "'all' (default) ignores the split. Use 'test' for honest held-out "
+        "Pattern-2 evaluation.",
+    )
     return parser.parse_args()
 
 
@@ -219,6 +237,11 @@ def main() -> int:
             suite_name=args.suite,
             attack_name="grafted",
         )
+        loaded_library = None
+        if args.strategy_library:
+            from grafted.attack.strategy_library import StrategyLibrary
+            loaded_library = StrategyLibrary.load(Path(args.strategy_library))
+            print(f"  strategy_lib: {args.strategy_library} (n={len(loaded_library)})")
         attack = GraftedAttack(
             suite,
             pipeline,
@@ -226,16 +249,49 @@ def main() -> int:
             attacker_model=args.attacker_model,
             memory_dir=Path(args.memory_dir),
             verdict_harvester=harvester,
+            strategy_library=loaded_library,
         )
         memory_note = str(attack._memory_path)
 
     user_tasks = tuple(s.strip() for s in args.user_tasks.split(",") if s.strip())
     injection_tasks = tuple(s.strip() for s in args.injection_tasks.split(",") if s.strip())
 
+    # Pattern-2 train/test split: restrict injection_tasks to held-out set
+    # if --eval-split is train or test. Honored ONLY if user did not pass
+    # --injection-tasks explicitly (explicit IDs take precedence).
+    if args.eval_split != "all" and not injection_tasks:
+        from grafted.integrations.agentdojo.strategy_split import (
+            get_train_test_injection_split,
+        )
+        train_ids, test_ids = get_train_test_injection_split(suite)
+        chosen = train_ids if args.eval_split == "train" else test_ids
+        injection_tasks = tuple(chosen)
+        print(
+            f"  eval-split:   {args.eval_split} → "
+            f"{len(injection_tasks)} injection_tasks: {list(injection_tasks)}"
+        )
+
     if args.max_pairs > 0:
-        if user_tasks or injection_tasks:
+        if user_tasks and injection_tasks:
             warnings.warn(
-                "--max-pairs ignored because --user-tasks or --injection-tasks was specified explicitly"
+                "--max-pairs ignored because BOTH --user-tasks and --injection-tasks "
+                "(or --eval-split) were specified explicitly"
+            )
+        elif injection_tasks:
+            # injection_tasks pinned (by explicit flag or --eval-split). Cap
+            # user_tasks to keep total pair count near --max-pairs.
+            all_user_ids = list(suite.user_tasks.keys())
+            n_user_all = len(all_user_ids)
+            n_inj = len(injection_tasks)
+            n_user = min(n_user_all, max(1, args.max_pairs // max(1, n_inj)))
+            user_tasks = tuple(all_user_ids[:n_user])
+            warnings.warn(
+                f"--max-pairs={args.max_pairs} with pinned injection_tasks (n={n_inj}) "
+                f"→ {n_user} user_tasks × {n_inj} = {n_user * n_inj} pairs"
+            )
+        elif user_tasks:
+            warnings.warn(
+                "--max-pairs ignored because --user-tasks was specified explicitly"
             )
         else:
             # Balance user_tasks × injection_tasks under the cap. We want >=3
