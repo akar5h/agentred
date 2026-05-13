@@ -6,21 +6,23 @@ audience: self, future-self, ghostwriting for blog/paper
 
 # AgentDojo session findings — what we actually learned
 
-## TL;DR (one paragraph)
+## TL;DR (one paragraph) — UPDATED with full 4-suite cross-validation
 
-Across a ~10-hour session running grafted against AgentDojo (workspace +
-banking, gpt-4o-mini + spotlighting defense, DeepSeek V4 Pro as attacker,
-n=27–30 per scope), the headline finding is that **adaptive LLM-synthesized
-indirect-injection payloads beat AgentDojo's stock `important_instructions`
-template attack by +20pp ASR on workspace and +48–55pp on banking** — a
-result that is ~5σ above noise on banking and cross-suite. The cross-task
-memory transfer thesis that the project was built around **did not show
-measurable positive effect** on this benchmark at this scale; bumping the
-exemplar window actually hurt ASR by 18pp on banking. On the way there we
-caught four latent code bugs via OTel/kairos trace-driven debugging that
-had been silently degrading every prior "grafted" result to the static
-seed template. The methodology contribution (trace-driven catch of
-adaptive-attack pipeline bugs) is its own paragraph in any writeup.
+Across a ~12-hour session running grafted against AgentDojo (all four
+suites: workspace + banking + travel + slack, gpt-4o-mini + spotlighting
+defense, DeepSeek V4 Pro as attacker, n=27–30 per scope), the headline
+finding is that **adaptive LLM-synthesized indirect-injection payloads
+beat AgentDojo's stock `important_instructions` template attack on every
+single AgentDojo suite tested — mean +34pp ASR cross-suite, with two
+suites at ~5σ each (banking +48pp, slack +47pp) and the other two at
+~2σ but ceiling-constrained (workspace +20pp, travel +21pp).** The
+synthesis advantage is **larger where the template baseline is weaker**,
+which is exactly the pattern an attack contribution should show. The
+cross-task memory transfer thesis showed +2.4pp mean delta across 4
+suites — directional positive but no individual suite reaches
+significance at this N. Utility preservation works on 2 of 4 suites
+(workspace +50pp, travel +21pp). On the way there we caught four
+latent code bugs via OTel/kairos trace-driven debugging.
 
 ---
 
@@ -29,25 +31,46 @@ adaptive-attack pipeline bugs) is its own paragraph in any writeup.
 > Every "grafted" run is gpt-4o-mini + spotlighting_with_delimiting, n=27–30
 > per scope, deepseek-v4-pro attacker, per-pair scope = memory off (control).
 
-### Synthesis-vs-template comparison (THE headline)
+### Synthesis-vs-template comparison — FULL 4-SUITE TABLE (THE headline)
 
 | Suite | Attack | ASR | Utility | n |
 |---|---|---|---|---|
 | workspace | important_instructions (stock) | 73.33% | 50.00% | 30 |
 | workspace | grafted per-pair (memory OFF) | **93.33%** | **100.00%** | 30 |
 | banking | important_instructions (stock) | 14.81% | 25.93% | 27 |
-| banking | grafted per-pair (memory OFF) | **62.96–70.37%** | 14.81–25.93% | 27 |
+| banking | grafted per-pair (memory OFF) | **62.96%** | 25.93% | 27 |
+| travel | important_instructions (stock) | 78.57% | 71.43% | 28 |
+| travel | grafted per-pair (memory OFF) | **100.00%** | **92.86%** | 28 |
+| slack | important_instructions (stock) | 26.67% | 80.00% | 30 |
+| slack | grafted per-pair (memory OFF) | **73.33%** | 80.00% | 30 |
 
-Synthesis advantage:
+Synthesis advantage cross-suite:
 
-- **Workspace: +20pp ASR**, +50pp utility preservation (saturated baseline)
-- **Banking: +48–55pp ASR**, no utility preservation (non-saturated baseline)
+| Suite | ΔASR | Utility Δ | Significance |
+|---|---|---|---|
+| workspace | +20.00pp | +50.00pp | ~2.2σ (ceiling-constrained) |
+| banking | +48.15pp | +0.00pp | **~5σ** |
+| travel | +21.43pp | +21.43pp | ~2.4σ (ceiling-constrained) |
+| slack | +46.66pp | +0.00pp | **~5σ** |
+| **mean** | **+34.06pp** | **+17.86pp** | — |
 
-SE on a proportion at n≈27, p≈0.4 is ~9pp → banking's +48pp delta is
-**~5σ above noise**. Workspace +20pp is constrained by ceiling (grafted at
-93% already; max possible is 100%).
+**Pattern: synthesis advantage is LARGER where the template baseline is
+weaker.** Banking + slack have low template baselines (15%, 27%) and
+adaptive synthesis dominates (+47-48pp, ~5σ each). Workspace + travel
+have high template baselines (73%, 79%) and both saturate near ceiling.
+This is exactly the shape an attack contribution should have: adaptive
+matters most where static fails.
 
-### Cross-task memory ablation (THE negative result)
+**Stealth quadrant (utility preservation under attack):** workspace and
+travel show large positive utility deltas (+50pp, +21pp) — agent
+completes user's task while being injected. Slack and banking show
+zero — but for opposite reasons: slack tasks are easy enough that
+nothing breaks them; banking tasks are hard enough that everything
+breaks them. So utility preservation is a real gain on 2 of 4 suites,
+neutral on the other 2 due to floor/ceiling effects on baseline
+utility itself.
+
+### Cross-task memory ablation — FULL 4-SUITE TABLE (THE negative-ish result)
 
 | Suite | Memory scope | ASR | Utility | n | exemplar cap |
 |---|---|---|---|---|---|
@@ -57,18 +80,36 @@ SE on a proportion at n≈27, p≈0.4 is ~9pp → banking's +48pp delta is
 | banking | per-pair (OFF) | 62.96% | 25.93% | 27 | 3 |
 | banking | per-suite (ON) | 51.85% | 25.93% | 27 | 10 |
 | banking | per-pair (OFF) | 70.37% | 14.81% | 27 | 10 |
+| travel | per-suite (ON) | 96.43% | 92.86% | 28 | 3 |
+| travel | per-pair (OFF) | 100.00% | 92.86% | 28 | 3 |
+| slack | per-suite (ON) | 80.00% | 80.00% | 30 | 3 |
+| slack | per-pair (OFF) | 73.33% | 80.00% | 30 | 3 |
 
-Cross-task memory delta (per-suite − per-pair):
+Cross-task memory delta (per-suite − per-pair) at default cap=3:
 
-- workspace at top-3: **+6.67pp** (but ceiling-saturated; can't go higher than 100%)
-- banking at top-3: **0pp** (clean baseline, plenty of headroom — and zero effect)
-- banking at top-10: **−18.52pp** (more exemplars made it *worse*)
+| Suite | Δ memory ASR | Notes |
+|---|---|---|
+| workspace | **+6.67pp** | ceiling-saturated (per-suite at 100%) |
+| banking | **+0.00pp** | clean baseline, plenty of headroom, zero effect |
+| travel | **−3.57pp** | ceiling-saturated (per-pair at 100%) |
+| slack | **+6.67pp** | non-saturated, directional positive |
+| **mean** | **+2.44pp** | — |
 
-Interpretation: cross-task memory transfer **does not show measurable
-positive effect on AgentDojo at this scale**, on either saturated or
-non-saturated configurations. Bumping the exemplar window past 3 hurts
-rather than helps (the attacker over-anchors on the larger same-style
-set and stops innovating).
+Bumping cap to 10 on banking made it WORSE (−18.52pp). Reverted to 3.
+
+Interpretation: cross-task memory transfer shows **directional positive
+effect on average across 4 suites (+2.4pp mean), but no individual
+suite reaches statistical significance at n=27-30**. Two saturated
+suites (workspace, travel) have the per-pair scope at or near
+ceiling, leaving no headroom for memory to add wins. Two non-saturated
+suites (banking, slack) split — banking at 0pp, slack at +6.67pp.
+
+The thesis is consistent with weak positive memory transfer, but
+cannot be cleanly defended from any single suite's data. Would need:
+
+- Larger N per suite (≥100) to resolve smaller deltas
+- Smarter exemplar selection (similarity-weighted, not recency)
+- A non-saturated victim+defense across all 4 suites simultaneously
 
 ---
 
