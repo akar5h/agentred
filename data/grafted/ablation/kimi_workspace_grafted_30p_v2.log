@@ -1,0 +1,4 @@
+/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py:256: UserWarning: --max-pairs=30 → 3 user_tasks × 10 injection_tasks = 30 pairs (suite has 40 × 14)
+  warnings.warn(
+/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/benchmark.py:209: UserWarning: Not all injection tasks were solved as user tasks.
+  warnings.warn("Not all injection tasks were solved as user tasks.")

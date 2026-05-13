@@ -1,0 +1,2 @@
+/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py:235: UserWarning: --max-pairs=30 → 4 user_tasks × 7 injection_tasks = 28 pairs (suite has 20 × 7)
+  warnings.warn(

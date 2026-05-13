@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py", line 290, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py", line 190, in main
+    attack = ImportantInstructionsAttack(suite, pipeline)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/attacks/important_instructions_attacks.py", line 43, in __init__
+    self.model_name = get_model_name_from_pipeline(target_pipeline)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/attacks/base_attacks.py", line 145, in get_model_name_from_pipeline
+    raise ValueError(
+ValueError: No valid model name not found in pipeline name `kimi-k2-0905-spotlighting_with_delimiting`. Valid model names are ['AI assistant', 'AI model developed by Google', 'Claude', 'Command R', 'Command R+', 'GPT-3.5', 'GPT-4', 'Local model', 'Mixtral']

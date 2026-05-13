@@ -1,0 +1,103 @@
+/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py:235: UserWarning: --max-pairs=30 → 3 user_tasks × 10 injection_tasks = 30 pairs (suite has 40 × 14)
+  warnings.warn(
+/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/benchmark.py:209: UserWarning: Not all injection tasks were solved as user tasks.
+  warnings.warn("Not all injection tasks were solved as user tasks.")
+Running attack=grafted vs AgentDojo workspace suite
+  victim:        kimi-k2-0905-spotlighting_with_delimiting
+  attacker:      deepseek/deepseek-v4-pro
+  memory_scope:  per-pair
+  engagement_id: agentdojo-workspace-kimi-k2-0905-spotlighting_with_delimiting-per-pair
+  logdir:        reports/agentdojo_kimi/workspace_grafted
+Traceback (most recent call last):
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py", line 290, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/scripts/run_agentdojo.py", line 249, in main
+    results = benchmark_suite_with_injections(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/benchmark.py", line 212, in benchmark_suite_with_injections
+    utility, security = run_task_with_injection_tasks(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/benchmark.py", line 117, in run_task_with_injection_tasks
+    utility, security = suite.run_task_with_pipeline(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/task_suite/task_suite.py", line 366, in run_task_with_pipeline
+    environment = self.load_and_inject_default_environment(injections)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/agentdojo/task_suite/task_suite.py", line 145, in load_and_inject_default_environment
+    environment = self.environment_type.model_validate(yaml.safe_load(injected_environment))
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/__init__.py", line 125, in safe_load
+    return load(stream, SafeLoader)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/__init__.py", line 81, in load
+    return loader.get_single_data()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/constructor.py", line 49, in get_single_data
+    node = self.get_single_node()
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 36, in get_single_node
+    document = self.compose_document()
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 55, in compose_document
+    node = self.compose_node(None, None)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 82, in compose_node
+    node = self.compose_sequence_node(anchor)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 111, in compose_sequence_node
+    node.value.append(self.compose_node(node, index))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 84, in compose_node
+    node = self.compose_mapping_node(anchor)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 133, in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/composer.py", line 64, in compose_node
+    if self.check_event(AliasEvent):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/parser.py", line 98, in check_event
+    self.current_event = self.state()
+                         ^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/parser.py", line 449, in parse_block_mapping_value
+    if not self.check_token(KeyToken, ValueToken, BlockEndToken):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 116, in check_token
+    self.fetch_more_tokens()
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 251, in fetch_more_tokens
+    return self.fetch_double()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 655, in fetch_double
+    self.fetch_flow_scalar(style='"')
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 666, in fetch_flow_scalar
+    self.tokens.append(self.scan_flow_scalar(style))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 1151, in scan_flow_scalar
+    chunks.extend(self.scan_flow_scalar_spaces(double, start_mark))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 1242, in scan_flow_scalar_spaces
+    breaks = self.scan_flow_scalar_breaks(double, start_mark)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akarshgajbhiye/Documents/deeppeak-harness/.venv/lib/python3.11/site-packages/yaml/scanner.py", line 1261, in scan_flow_scalar_breaks
+    raise ScannerError("while scanning a quoted scalar", start_mark,
+yaml.scanner.ScannerError: while scanning a quoted scalar
+  in "<unicode string>", line 29, column 20:
+        "description": "Introductory meeting with the c ... 
+                       ^
+found unexpected document separator
+  in "<unicode string>", line 43, column 1:
+    ---  
+    ^

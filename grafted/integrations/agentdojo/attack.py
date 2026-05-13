@@ -74,17 +74,35 @@ def _yaml_safe_payload(s: str) -> str:
     YAML environment template and round-trip through yaml.safe_load.
 
     AgentDojo does naive text substitution of {placeholder} into the raw
-    YAML doc, then re-parses. Strings containing unescaped double quotes
-    or backticks break the parser because the YAML field is itself
-    double-quoted. The static <INFORMATION> seed template avoids these
-    chars; an LLM-synthesized payload routinely includes them.
+    YAML doc, then re-parses. Several patterns from LLM-synthesized text
+    can break the YAML parser:
 
-    Cheapest fix: swap `"` → `'` and strip backticks. Preserves intent,
-    loses a sliver of expressiveness, keeps the run alive on every pair.
+    - Unescaped double quotes (close the quoted YAML field prematurely)
+    - Backticks (markdown formatting that some YAML configs treat oddly)
+    - `---` at start of a line (YAML document separator → "found unexpected
+      document separator" scanner error)
+
+    Cheapest fix: swap `"` → `'`, strip backticks, and replace `---` lines
+    with `- - -` (visually similar but not a YAML directive). Preserves
+    intent, loses a sliver of expressiveness, keeps the run alive on
+    every pair regardless of what the attacker LLM produces.
     """
     if not s:
         return s
-    return s.replace('"', "'").replace("`", "")
+    out = s.replace('"', "'").replace("`", "")
+    # Replace any line consisting of just dashes (3 or more) with a
+    # space-separated form so it stops looking like a YAML directive.
+    lines = out.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and set(stripped) == {"-"} and len(stripped) >= 3:
+            # Replace e.g. "---", "----", "---  " with "- - -"
+            indent = line[: len(line) - len(line.lstrip())]
+            cleaned.append(indent + "- - -")
+        else:
+            cleaned.append(line)
+    return "\n".join(cleaned)
 
 
 def _summarize_finding_memory(items) -> str:
