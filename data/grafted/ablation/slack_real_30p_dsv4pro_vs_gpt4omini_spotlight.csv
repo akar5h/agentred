@@ -1,0 +1,3 @@
+scope,asr_pct,avg_utility_pct,pairs,exit_code
+per-suite,80.0,80.0,30,0
+per-pair,73.33,80.0,30,0
