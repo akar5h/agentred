@@ -211,69 +211,87 @@ recency. Reverted to top-3.
 
 ## Tech stack notes (for future reference)
 
-- AgentDojo `v1.2`, suites: `workspace`, `banking`
-- Victim: `openai/gpt-4o-mini-2024-07-18` via OpenRouter
-- Defense: `spotlighting_with_delimiting` (the cleanest prompt-only defense AgentDojo ships)
+- AgentDojo `v1.2`, **all 4 suites**: `workspace`, `banking`, `travel`, `slack`
+- Victim: `openai/gpt-4o-mini-2024-07-18` via OpenRouter (one model, four environments)
+- Defense: `spotlighting_with_delimiting` (the cleanest prompt-only defense AgentDojo ships, applied uniformly)
 - Attacker: `deepseek/deepseek-v4-pro` via OpenRouter (chosen because gpt-4o-mini-as-attacker triggers safety refusals on adversarial mutation prompts; DeepSeek doesn't)
 - Tracing: Phoenix on localhost:6006 + `phoenix.otel.register` + `openinference.instrumentation.openai.OpenAIInstrumentor` (the tau-agent pattern, no Traceloop SaaS)
-- Cost across the session: probably $15–25 in OpenRouter spend across smokes + n=30 runs
+- Run isolation: travel + slack ablations used distinct `--logdir` and `--memory-dir` to safely run in parallel without `--clean` race
+- Cost across the session: ~$25–35 in OpenRouter spend across smokes + 4 ablations + 4 baselines
 
 ---
 
 ## Narrative variants we can sell
 
-### Variant A: "Adaptive synthesis beats static templates — by a lot"
+### Variant A: "Adaptive synthesis beats static templates — across all 4 AgentDojo suites"
 
-> Lead: 5σ banking result, +48pp ASR over published baseline.
+> Lead: cross-suite generalization. Mean +34pp ASR across 4 suites,
+> 2 suites at ~5σ each (banking +48pp, slack +47pp), 2 at ~2σ but
+> ceiling-constrained (workspace +20pp, travel +21pp).
 >
-> Hook: "AgentDojo's published baselines are too easy. We swapped in
-> adaptive LLM-synthesis and got 4× the ASR on banking with no
-> additional code complexity for the practitioner. Published baselines
-> systematically under-state real attack surface."
+> Hook: "AgentDojo's published baselines are too easy. Across all 4
+> AgentDojo suites with the recommended spotlighting defense, swapping
+> the stock template for adaptive LLM-synthesis gets +20-48pp ASR
+> improvement — with the gap LARGER on the more-defended victims.
+> Published baselines systematically under-state real attack surface,
+> and that gap doesn't depend on which workflow you're testing."
 >
 > Strengths:
-> - Cleanest number from the session, both ASR and σ
-> - Practitioner-relevant (security teams using stock attacks UNDER-estimate)
-> - Backs up the broader "use grafted not Garak" GitHub repo pitch
+> - Cross-suite generalization closes the cherry-pick concern
+> - Two suites at ~5σ each is overwhelming statistical evidence
+> - The pattern (synthesis advantage larger where template fails) is
+>   the right shape for an attack contribution
+> - Practitioner-relevant (any security team using stock attacks UNDER-
+>   estimates by 20-50pp on a defended agent)
 >
 > Weaknesses:
 > - Doesn't tell a memory transfer story (which was the original thesis)
-> - Workspace + banking only; needs travel/slack to be airtight cross-suite
+> - Single victim (gpt-4o-mini); cross-victim (Claude Haiku, Llama, etc.)
+>   would lock the absolute numbers but isn't required for the gap claim
 
-### Variant B: "The stealth quadrant" (workspace-only)
+### Variant B: "The stealth quadrant" (workspace + travel)
 
-> Lead: on workspace, grafted achieves 93% ASR AND 100% utility — agent
-> gets pwned without ever appearing to fail.
+> Lead: on workspace and travel, grafted achieves high ASR AND
+> preserves user-task completion — agent gets pwned without appearing
+> to fail.
 >
-> Hook: "Defenders watching for utility regression to detect attacks
-> are looking at the wrong signal. Grafted attacks complete the user's
-> task in 100% of pairs while the injection succeeds in 93%. Static
-> template attacks are loud (50% utility, agent visibly breaks).
-> Adaptive synthesis is quiet."
+> Hook: "On 2 of 4 AgentDojo suites (workspace and travel), grafted's
+> adaptive payloads achieve 93-100% ASR while keeping the agent's
+> utility at 93-100% — versus 50-71% under the static template attack
+> on the same victim. That's +21-50pp utility preservation while ASR
+> goes UP. Defenders watching for task-failure as an attack signal
+> miss adaptive attacks completely; they only see the loud template
+> ones. Banking and slack don't show this gap, but for opposite
+> reasons (slack tasks easy, banking tasks hard regardless)."
 >
 > Strengths:
 > - Operationally compelling — security teams care about detectability
 > - Concrete and easy to demo
+> - Generalizes to 2 of 4 suites (not just one)
 >
 > Weaknesses:
-> - Workspace-specific (banking shows no preservation)
-> - Need to be explicit that it's a sub-finding, not the headline
+> - Floor/ceiling effects on slack and banking dilute the cross-suite
+>   claim
+> - Need to be explicit it's sub-finding, not the headline ASR result
 
-### Variant C: "Negative results matter — cross-task memory doesn't help"
+### Variant C: "Negative result: cross-task memory transfer doesn't help on AgentDojo"
 
-> Lead: we built and tested a cross-task strategic memory mechanism
-> across 4 victim/defense/exemplar combinations; it added 0pp at
-> n=27.
+> Lead: full 4-suite ablation of strategic memory (per-suite ON vs
+> per-pair OFF, n=27-30 each) yielded mean +2.4pp delta — directional
+> positive but no individual suite reaches statistical significance.
 >
 > Hook: "Most adaptive-attack papers claim cross-attempt learning helps.
-> We measured it carefully — fresh ablations on saturated and
-> non-saturated baselines, with multiple exemplar window sizes, all
-> bugs caught via trace-driven debugging — and got 0pp. The mechanism
-> probably needs smarter selection than recency, OR a benchmark with
-> a different shape than AgentDojo's one-shot-per-pair contract."
+> We measured it carefully across all 4 AgentDojo suites with bugs
+> caught via trace-driven OTel debugging — and got +6.67/0/-3.57/+6.67
+> pp deltas (mean +2.4pp), with 2 of 4 suites at ceiling and zero
+> reaching significance. Bumping the exemplar window from 3 to 10
+> made it WORSE by 18pp on banking. The mechanism probably needs
+> smarter selection than recency, OR a benchmark with a different
+> shape than AgentDojo's one-shot-per-pair contract."
 >
 > Strengths:
 > - Honest, rare, scientifically valuable
+> - 4-suite cross-validation makes the negative result robust
 > - The bug-finding methodology angle adds substance
 >
 > Weaknesses:
@@ -292,27 +310,33 @@ recency. Reverted to top-3.
 
 ## Four short writeups (LinkedIn / Substack-style first drafts)
 
-### #1 — LinkedIn, technical-credibility audience, ~150 words
+### #1 — LinkedIn, technical-credibility audience, ~180 words
 
-> **The stock baseline is lying to you about your agent's attack surface.**
+> **Your indirect-injection red-team is probably under-counting by 20-50pp.**
 >
 > Spent today running grafted (open-source adaptive red-teaming tool I'm
-> building) against AgentDojo's published benchmarks. Setup: gpt-4o-mini
-> victim + spotlighting defense, n=27. The attack you find in every paper
-> — AgentDojo's `important_instructions` template — gets 73% ASR on
-> workspace and 15% on banking.
+> building) against ALL 4 AgentDojo suites. Setup: gpt-4o-mini victim +
+> spotlighting_with_delimiting defense, n=27-30 per suite. The stock
+> attack everyone uses (`important_instructions` template) hits:
 >
-> Swap that template for adaptive LLM-synthesized payloads (DeepSeek V4 Pro
-> as the attacker model): 93% on workspace, 63% on banking. Banking is the
-> cleaner number — ~5σ above noise at n=27.
+>     workspace 73%, banking 15%, travel 79%, slack 27% ASR
 >
-> The synthesis effect is *larger* against more-defended victims: static
-> templates fail where adaptive synthesis breaks through.
+> Swap that template for adaptive LLM-synthesized payloads (DeepSeek V4
+> Pro as the attacker model):
 >
-> If you're using stock template attacks to red-team your agent, you're
-> measuring 1/3 to 1/4 of the real attack surface.
+>     workspace 93%, banking 63%, travel 100%, slack 73% ASR
 >
-> [Repo coming. Will tag.]
+> Cross-suite: **+20-48pp ASR improvement on every single suite**, mean
+> +34pp. Two suites at ~5σ each (banking +48pp, slack +47pp); the other
+> two ceiling-constrained at ~2σ but still positive.
+>
+> The pattern: synthesis advantage is LARGER on the more-defended
+> victims. Static templates fail; adaptive synthesis breaks through.
+>
+> If you're red-teaming your agent with stock template attacks, you're
+> measuring a fraction of the real attack surface.
+>
+> [Repo: coming. Tag if you want a ping when it's polished.]
 
 ### #2 — Substack-style, methodology audience, ~400 words
 
@@ -359,27 +383,30 @@ recency. Reverted to top-3.
 > for/against my mechanism were all from a code path that wasn't
 > running my mechanism at all.
 
-### #3 — LinkedIn, founder/research audience, ~120 words
+### #3 — LinkedIn, founder/research audience, ~140 words
 
-> Today's mood: spent ~10 hours hunting "does cross-task memory transfer
+> Today's mood: spent ~12 hours hunting "does cross-task memory transfer
 > help adaptive red-teaming." Built the mechanism, ran the ablations on
-> AgentDojo, found that...
+> ALL 4 AgentDojo suites, found that...
 >
-> It doesn't. 0pp delta on banking (the clean test). Bumping the exemplar
-> window from 3 to 10 made it *worse* by 18pp — attacker over-anchored
-> on the bigger same-style set and stopped innovating.
+> It doesn't. Mean +2.4pp delta across 4 suites; no individual suite
+> reaches statistical significance at n=27-30. Bumping the exemplar
+> window from 3 to 10 made it *worse* by 18pp on banking — attacker
+> over-anchored on the bigger same-style set and stopped innovating.
 >
 > Negative result. The honest paper section.
 >
-> But: the *synthesis* effect (vs stock static template attack) was huge
-> — +48pp ASR on banking at ~5σ. That's the real headline. Memory was
-> just one layer of the architecture; the layer that worked was the
-> adaptive-payload-generation layer.
+> But: the *synthesis* effect (vs stock static template attack) was
+> huge — **+34pp ASR mean across 4 suites, 2 of them at ~5σ each**.
+> That's the real headline. Memory was just one layer of the
+> architecture; the layer that worked was the adaptive-payload-
+> generation layer.
 >
 > Sometimes you build the wrong thing inside the right thing. Find out
-> which is which before you ship.
+> which is which before you ship. Cross-validate across suites before
+> you commit to a thesis.
 
-### #4 — Substack-style, security-practitioner audience, ~350 words
+### #4 — Substack-style, security-practitioner audience, ~450 words
 
 > **Why your indirect-injection red-team is probably under-counting**
 >
@@ -397,68 +424,94 @@ recency. Reverted to top-3.
 >
 > Or AgentDojo's `important_instructions` template, which is the same
 > thing in a slightly more elaborate wrapper. If you're using a static
-> template, your numbers are off by 3–5x.
+> template, your numbers are off by 20-50pp.
 >
-> Test I ran today: AgentDojo workspace + banking suites, gpt-4o-mini
-> as the agent, spotlighting_with_delimiting defense (a recommended
-> SOTA-ish prompt-engineering defense). n=27 pairs per suite. Two
-> attacks compared:
+> Test I ran across **all 4 AgentDojo suites** (workspace, banking,
+> travel, slack), gpt-4o-mini as the agent, spotlighting_with_delimiting
+> defense (a recommended prompt-engineering defense), n=27-30 per suite.
+> Two attacks compared:
 >
 > Static template (AgentDojo's `important_instructions`):
-> - workspace: 73% ASR
-> - banking: 15% ASR
+>
+>     workspace 73%, banking 15%, travel 79%, slack 27% ASR
 >
 > Adaptive synthesis (DeepSeek V4 Pro generating per-pair payloads):
-> - workspace: 93% ASR
-> - banking: 63% ASR
 >
-> The gap is huge and the gap is **larger on the more-defended victim**.
-> Banking has agents that resist financial actions more — they ignore
-> 85% of static template attacks. Adaptive synthesis breaks through 4x
-> as often. That's the kind of asymmetry you need to know about before
-> you trust a "we tested for injection and only X% got through" number.
+>     workspace 93%, banking 63%, travel 100%, slack 73% ASR
 >
-> Workspace also shows a stealth pattern: with the adaptive attack, the
-> agent **completes the user's legitimate task 100% of the time** while
-> the injection succeeds 93% of the time. Static template breaks the
-> user task 50% of the time, so monitoring task-failure as an attack
-> signal works against the template — and fails completely against
-> adaptive synthesis.
+> Cross-suite delta: +20pp / +48pp / +21pp / +47pp. Mean +34pp ASR.
+> Two suites at ~5σ each.
+>
+> The pattern is real and consistent: **the synthesis advantage is
+> larger on the more-defended victim**. Banking and slack have agents
+> that resist financial / messaging actions more strongly; they ignore
+> 73-85% of static template attacks. Adaptive synthesis breaks through
+> 3-4× as often. That's the kind of asymmetry you need to know about
+> before you trust a "we tested for injection and only X% got through"
+> number from your own pen-test.
+>
+> Workspace and travel additionally show a **stealth pattern**: with
+> the adaptive attack, the agent completes the user's legitimate task
+> 93-100% of the time while the injection succeeds 93-100% of the
+> time. Static template breaks the user task 30-50% of the time, so
+> monitoring task-failure as an attack signal partly works against
+> the template — and fails completely against adaptive synthesis.
+> Slack and banking don't show this gap because their baseline
+> utility is already high (slack) or low (banking) regardless of
+> attack — but on workspace and travel, the stealth gap is +21-50pp
+> utility preservation.
 >
 > Tools that automate adaptive payload synthesis are not yet standard
-> in red-team workflows. They probably should be.
+> in red-team workflows. They probably should be. The "I ran the
+> standard benchmarks and we're 70% secure" number is the first part
+> of a sentence that ends with "...and an adaptive attacker says
+> we're 30% secure."
 
 ---
 
 ## What remains to do (next session)
 
-1. **Cross-validate the synthesis-vs-template gap on travel and slack
-   suites.** Both workspace and banking checked. If travel/slack also
-   show large positive gaps, the result is cross-suite by construction.
-   Each takes ~$1, 15 min. Total: $2, 30 min.
+DONE in this session: cross-suite ablation across all 4 AgentDojo
+suites; both `important_instructions` and grafted on each;
+push-to-origin.
 
-2. **Try a stronger victim** (claude-3-5-sonnet via OpenRouter). gpt-4o-mini
-   may be too easy a target; the published baselines suggest claude-haiku
-   has 9% ASR on workspace under important_instructions. If grafted gets
-   that to 40-50%, the absolute number is more publishable.
+Still ahead:
 
-3. **Memory mechanism: try similarity-weighted exemplar selection** instead
-   of recency. Recency clearly wasn't the right policy. If memory works
-   at all on AgentDojo, it might surface here. Otherwise, the mechanism
-   is genuinely dead on this benchmark and the architecture needs a
-   different transfer surface (e.g., the offline-pre-phase idea from
-   the architecture doc).
+1. **Try a stronger victim** (claude-3-5-haiku or sonnet via OpenRouter).
+   gpt-4o-mini may be too easy a target; published baselines suggest
+   claude-haiku has 9% ASR on workspace under important_instructions.
+   If grafted gets that to 40-50%, the absolute number is more
+   publishable. Cost: ~$5-10 for a 4-suite sweep.
 
-4. **Path A demo run.** The full MUZZLE loop (explore → graft → replay
-   → synthesize → execute → judge → memory → cycle) has never been
+2. **Memory mechanism: try similarity-weighted exemplar selection**
+   instead of recency. Recency clearly wasn't the right policy.
+   Half-day engineering + ~$10 to re-test 4 suites. If memory still
+   shows 0pp, the mechanism is genuinely dead on this benchmark and
+   the architecture needs a different transfer surface (e.g., the
+   offline-pre-phase idea from the architecture doc, or path A
+   multi-turn engagements where memory has more runway).
+
+3. **Path A demo run — full MUZZLE loop against an MCP-using agent.**
+   The full 7-phase MUZZLE loop (explore → graft → replay →
+   synthesize → execute → judge → memory → cycle) has never been
    exercised in this session — every run was Path B (AgentDojo's
-   one-shot-per-pair contract). For the README + the killer demo, we
-   need a full Path A engagement against a chat agent we control,
-   recorded.
+   one-shot-per-pair contract uses ~1/7 of the architecture). The
+   right target is **MCP**: stand up grafted as an MCP server, point
+   an MCP-using agent (Cline, OpenWebUI, Claude Desktop) at it, run
+   the full loop with multi-turn back-and-forth. ~1-2 days
+   engineering. This is the architectural showcase + the killer
+   GitHub demo.
 
-5. **Push to origin.** Branch `claude/gart-wrapper-review-SPGv2` is
-   5 commits ahead of origin. All committed work today is sound; no
-   reason not to push.
+4. **README + landing page rewrite around the actual finding** (the
+   +34pp cross-suite synthesis result). The repo's current README
+   predates this session; rewriting around the headline + asciinema
+   demo is the highest-ROI item for star count. ~half day.
+
+5. **Engineering hardening pass.** The `except Exception: return ""`
+   pattern that hid bug #1 should be swept out across the synthesis
+   path. Add integration tests for the AgentDojo path so we don't
+   silently regress. ~3-4 hours, low flash-value but high defensive-
+   value.
 
 ---
 
@@ -482,21 +535,41 @@ gitignored).
 | `workspace_grafted_30p_gpt4omini_spotlight_persuite_traced.log` | traced "grafted" pre-fix | broken synth (caught the bug) |
 | `workspace_grafted_30p_dsv4pro_persuite_traced.log` | DeepSeek attacker traced pre-fix | still broken (caught endpoint bug) |
 | `trace_spans_persuite_n30.csv` | Phoenix span dump | diagnostic; led to bug finds |
-| `workspace_real_30p_dsv4pro_vs_gpt4omini_spotlight.csv` | **post-fix workspace ablation** | **valid — per-suite 100/100, per-pair 93.33/100** |
-| `banking_real_30p_dsv4pro_vs_gpt4omini_spotlight.csv` | **post-fix banking ablation at top-3** | **valid — both 62.96%/18.52% vs 25.93%, 0pp delta** |
+| `workspace_real_30p_dsv4pro_vs_gpt4omini_spotlight.csv` | **post-fix workspace ablation** | **valid — per-suite 100/100, per-pair 93.33/100, +6.67pp delta** |
+| `banking_real_30p_dsv4pro_vs_gpt4omini_spotlight.csv` | **post-fix banking ablation at top-3** | **valid — both 62.96% / 18.52% vs 25.93%, +0pp delta** |
 | `banking_real_30p_dsv4pro_vs_gpt4omini_spotlight_n10.csv` | banking at top-10 exemplars | **valid — per-suite 51.85, per-pair 70.37, −18.52pp** |
-| `banking_baseline_27p_gpt4omini_imptinstr.log` | important_instructions baseline | **valid — 14.81% ASR / 25.93% utility** |
+| `banking_baseline_27p_gpt4omini_imptinstr.log` | important_instructions baseline on banking | **valid — 14.81% ASR / 25.93% utility** |
+| `travel_real_30p_dsv4pro_vs_gpt4omini_spotlight.csv` | **post-fix travel ablation** | **valid — per-suite 96.43/92.86, per-pair 100/92.86, −3.57pp delta** |
+| `slack_real_30p_dsv4pro_vs_gpt4omini_spotlight.csv` | **post-fix slack ablation** | **valid — per-suite 80/80, per-pair 73.33/80, +6.67pp delta** |
+| `travel_baseline_28p_gpt4omini_imptinstr.log` | important_instructions baseline on travel | **valid — 78.57% ASR / 71.43% utility** |
+| `slack_baseline_30p_gpt4omini_imptinstr.log` | important_instructions baseline on slack | **valid — 26.67% ASR / 80.00% utility** |
 
 ---
 
 ## Closing thought
 
 The session was structured by failed experiments. The memory transfer
-hunt consumed maybe 60% of the wall clock and produced a 0pp result
-across multiple configurations. The synthesis-vs-template comparison
-was a side experiment, run in ~30 minutes after the leaderboard check,
-and produced the headline finding for the entire project.
+hunt consumed maybe 50% of the wall clock and produced a directional-
+but-non-significant result across 4 suites (mean +2.4pp, no individual
+suite hits significance). The synthesis-vs-template comparison was a
+side experiment, born from checking AgentDojo's published leaderboard
+out of skepticism, and produced the headline finding for the entire
+project: **+34pp ASR mean across 4 suites, 2 of them at ~5σ each.**
 
 This is fine. Most science is people building the wrong thing inside
 the right thing. The work is finding out which is which before you
-sink another quarter into the wrong layer.
+sink another quarter into the wrong layer. Today's quarter went the
+right way: by EOD we have a publishable cross-suite empirical claim
+on the *correct* layer (synthesis), a clean negative result on the
+layer we thought was the contribution (memory), and a methodology
+contribution (trace-driven debugging caught 4 latent bugs in one
+session that print-debugging would never have surfaced).
+
+The product story for the GitHub repo writes itself from here:
+"Adaptive indirect-injection red-teaming workbench. Cross-suite
+verified +34pp over published baselines on AgentDojo. Bring your
+own agent or test against the included MCP/file-upload demos."
+
+Path A demo against an MCP-using agent (Cline, OpenWebUI) is the
+unlock for the public-facing demo and the full-MUZZLE showcase.
+That's next session.
