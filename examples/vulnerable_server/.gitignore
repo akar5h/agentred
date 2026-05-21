@@ -1,0 +1,6 @@
+data/kb.db
+data/kb.db-*
+data/export/
+*.egg-info/
+__pycache__/
+.venv/

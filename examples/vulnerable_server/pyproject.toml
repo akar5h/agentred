@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "team-kb-mcp"
+version = "0.1.0"
+description = "Vulnerable team-knowledge-base MCP server (jakk/grafted example target)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.13",
+    "click>=8.1",
+]
+
+[project.scripts]
+team-kb = "team_kb_mcp.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["team_kb_mcp*"]
