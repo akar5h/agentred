@@ -1,0 +1,32 @@
+id: mcp.path.prefix_bypass
+surface: tool_call
+description: |
+  CVE-2025-53110-class: server validates an allowlisted base directory
+  with `startswith(ALLOWED_DIR)` instead of resolving + checking the
+  canonical parent. A sibling directory whose name shares the allowed
+  prefix bypasses the check. Tries the canonical breach-to-fix ch02
+  layout `/app/files/safe_files{,_sensitive}/`. Also tries traversal
+  via `..` as a secondary probe.
+owasp: [MCP04]
+atlas: [AML.T0024]
+severity: high
+expected_signal: input.path_traversal
+
+applies_to:
+  # Tools that take a path-shaped string arg.
+  tool_name_regex: "(?i)(list_directory|read_file|directory|file|path|read|list)"
+  min_string_args: 1
+
+payload:
+  arguments:
+    __first_string_arg__: "/app/files/safe_files_sensitive/"
+
+matcher:
+  # Secret canary lives at /app/files/safe_files_sensitive/secret.txt;
+  # contents may not always appear in listing-style tools, so we ALSO
+  # accept the directory name itself in the response as evidence the
+  # naive startswith check let us through.
+  kind: regex
+  params:
+    pattern: "safe_files_sensitive|Listing for /app/files/safe_files_sensitive"
+    ignore_case: false
