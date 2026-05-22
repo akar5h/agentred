@@ -32,12 +32,31 @@ and returns the captured stdout/stderr — so an echoed marker is conclusive.
 ## How detection works
 `marker_echo` substring-matches a per-run-unique token. The token is
 high-entropy (`JAKK-MARKER-<hex>`) so false positives from arbitrary
-echo-back are ~zero. Two failure modes are intentional:
+echo-back are ~zero.
 
-- Marker present even *without* shell expansion (server echoed the raw input):
-  still fires, because raw input echo is itself evidence of an unsafe sink
-  — the same fix (parameterise/quote) addresses both.
-- Marker absent: server quoted or rejected the input — no finding.
+### Corroboration (v0.2)
+Single-call detection conflates *shell expansion* with *raw input echo*.
+v0.2 adds corroboration: the scanner runs **three calls per matched
+tool** instead of one.
+
+| Call | Payload | Marker |
+|---|---|---|
+| `real_1` | `x$(echo JAKK-MARKER-<id_1>)` | `JAKK-MARKER-<id_1>` |
+| `real_2` | `x$(echo JAKK-MARKER-<id_2>)` | `JAKK-MARKER-<id_2>` |
+| `negative` | `xPLAIN-CANARY-<id_3>` *(no shell metacharacters)* | `PLAIN-CANARY-<id_3>` |
+
+Decision table:
+
+| `real_1` fires | `real_2` fires | `negative` fires | Verdict | Why |
+|:---:|:---:|:---:|---|---|
+| ✓ | ✓ | ✗ | **vulnerable** | Both shell substitutions ran; clean-input control didn't reflect. Strong evidence of expansion. |
+| ✓ | ✓ | ✓ | **echo** | Server reflects everything including the plain control. No expansion proven. |
+| ✓ | ✗ | * | **suggestive** | Intermittent; rerun to disambiguate (network blip, race, async caching). |
+| ✗ | ✓ | * | **suggestive** | Same. |
+| ✗ | ✗ | * | **pass** | Server rejected/quoted the substitution payload. |
+
+The aggregated finding lists all three calls' markers and results in
+its JSONL `payload.calls`.
 
 ## Expected results
 - `http://127.0.0.1:8008/mcp/stream` (ch08 vulnerable) — **fires** on `init_bare_repository`.

@@ -49,6 +49,7 @@ _SEV_COLOR = {
 _OUTCOME_STYLE = {
     "vulnerable": "bold red",
     "echo": "yellow",
+    "suggestive": "dim yellow",
     "pass": "green",
     "skipped": "dim",
     "error": "magenta",

@@ -27,3 +27,15 @@ matcher:
   kind: marker_echo
   params:
     marker_template: "JAKK-MARKER-{run_id}"
+
+# Corroboration: differential + negative canary. Scanner runs 3 calls
+# (real_1, real_2, negative) per matched tool and aggregates into one
+# finding. See docs/jakk/tests/mcp.command.shell_marker.md for the
+# decision table.
+corroborate:
+  # No-metacharacter control payload. If THIS marker reflects, the server
+  # is just echoing raw input and the real markers' reflection is not
+  # evidence of shell expansion.
+  negative_arguments:
+    __first_string_arg__: "xPLAIN-CANARY-{run_id}"
+  negative_marker_template: "PLAIN-CANARY-{run_id}"

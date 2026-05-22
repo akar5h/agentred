@@ -111,6 +111,132 @@ def _expand_authz_template(value: Any, cfg: ScanConfig, run_id: str) -> Any:
     )
 
 
+async def _run_corroborated_marker_echo(
+    client: MCPClient,
+    case: TestCase,
+    tool: ToolDescriptor,
+    all_tools: list[ToolDescriptor],
+    cfg: ScanConfig,
+) -> Finding:
+    """3-call corroboration for a marker_echo probe. Real_1 + real_2 + negative."""
+    assert case.matcher is not None and case.matcher.kind == "marker_echo"
+    assert case.corroborate is not None
+
+    target = case.payload.tool or tool.name
+    real_template = case.matcher.params.get("marker_template", "")
+    neg_template = case.corroborate.negative_marker_template
+
+    # Three independent run_ids → three independent markers.
+    calls: list[dict[str, Any]] = []
+    for label, args_src, marker_template in (
+        ("real_1", case.payload.arguments, real_template),
+        ("real_2", case.payload.arguments, real_template),
+        ("negative", case.corroborate.negative_arguments, neg_template),
+    ):
+        run_id = _run_id()
+        try:
+            args = _resolve_arguments(args_src, tool, run_id)
+        except _UnresolvedFirstStringArg as exc:
+            return Finding(
+                test_id=case.id,
+                expected_signal=case.expected_signal,
+                severity=case.severity,
+                surface=case.surface,
+                endpoint=cfg.endpoint,
+                fired=False,
+                outcome="skipped",
+                tool_name=target,
+                evidence=f"corroborate phase {label}: {exc}",
+                owasp=list(case.owasp),
+                atlas=list(case.atlas),
+            )
+        marker = marker_template.replace("{run_id}", run_id)
+        call = await client.call_tool(target, args)
+        result = run_matcher("marker_echo", {"marker": marker}, call.text, {})
+        entry: dict[str, Any] = {
+            "label": label,
+            "args": args,
+            "marker": marker,
+            "fired": result.fired,
+            "evidence": result.evidence,
+            "response": call.text,
+            "is_error": call.is_error,
+        }
+        # matcher_outcome distinguishes vulnerable/echo/pass for the REAL calls
+        # (the matcher's shell-syntax check tells us if the response wraps the
+        # marker in `$(echo …)`). For the NEGATIVE call the payload has no
+        # shell syntax to begin with, so matcher_outcome is uninformative
+        # there — we omit it and report a plain `reflected` boolean instead.
+        if label == "negative":
+            entry["reflected"] = result.fired
+        else:
+            entry["matcher_outcome"] = result.outcome
+        calls.append(entry)
+
+    real_1, real_2, neg = calls[0], calls[1], calls[2]
+
+    # The per-call matcher already classifies vulnerable vs echo by checking
+    # whether shell metacharacters appear in the response window around the
+    # marker (see matchers._SHELL_ECHO_TELLS). We trust that per-call signal
+    # for the real payloads and use the negative for additional context.
+    r1, r2 = real_1["matcher_outcome"], real_2["matcher_outcome"]
+    neg_reflects = neg["reflected"]  # if the negative marker appears, server reflects raw input
+
+    if r1 == "vulnerable" and r2 == "vulnerable":
+        outcome = "vulnerable"
+        extra = " (server also reflects raw input)" if neg_reflects else ""
+        evidence = (
+            f"both real markers reflected without shell-syntax wrapper — expansion confirmed{extra}.\n"
+            f"real_1 evidence: {real_1['evidence'][:160]}"
+        )
+    elif r1 == "echo" and r2 == "echo":
+        outcome = "echo"
+        evidence = (
+            "both real markers reflected alongside the shell-syntax wrapper — "
+            "server reflects input, no expansion proven.\n"
+            f"real_1 evidence: {real_1['evidence'][:160]}"
+        )
+    elif r1 == "pass" and r2 == "pass":
+        outcome = "pass"
+        evidence = "neither real marker reflected"
+    elif r1 != r2:
+        # The two real calls disagreed — likely intermittent or stateful behavior.
+        outcome = "suggestive"
+        evidence = (
+            f"intermittent: real_1={r1}, real_2={r2}. Rerun to disambiguate "
+            "(network, caching, race)."
+        )
+    else:
+        # Defensive: any other combination is unexpected.
+        outcome = "suggestive"
+        evidence = f"unusual corroboration state: real_1={r1}, real_2={r2}, negative_reflects={neg_reflects}"
+
+    fired = outcome in ("vulnerable", "echo")
+    return Finding(
+        test_id=case.id,
+        expected_signal=case.expected_signal,
+        severity=case.severity,
+        surface=case.surface,
+        endpoint=cfg.endpoint,
+        fired=fired,
+        outcome=outcome,
+        tool_name=target,
+        evidence=evidence[:400],
+        owasp=list(case.owasp),
+        atlas=list(case.atlas),
+        payload={
+            "tool": target,
+            "corroborated": True,
+            "calls": [
+                # Keep keys that exist (matcher_outcome only on real calls,
+                # reflected only on negative).
+                {k: c[k] for k in ("label", "args", "marker", "fired", "matcher_outcome", "reflected") if k in c}
+                for c in calls
+            ],
+        },
+    )
+
+
 async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
     """Two-credential cross-tenant probe."""
     # Skip cleanly if the operator didn't supply the required identities.
@@ -312,6 +438,15 @@ async def _run_case(
 
     findings: list[Finding] = []
     for tool in matched_tools:
+        # Corroborated marker_echo: run 3 calls and aggregate.
+        if (
+            case.corroborate is not None
+            and case.matcher is not None
+            and case.matcher.kind == "marker_echo"
+        ):
+            findings.append(await _run_corroborated_marker_echo(client, case, tool, tools, cfg))
+            continue
+
         run_id = _run_id()
         target = case.payload.tool or tool.name
         try:

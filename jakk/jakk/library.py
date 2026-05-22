@@ -86,6 +86,35 @@ class AuthzPhase(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class CorroborateSpec(BaseModel):
+    """Corroboration: differential + negative-canary for marker_echo probes.
+
+    When set on a TestCase with ``matcher.kind == "marker_echo"``, the scanner
+    runs three calls per matched tool instead of one:
+
+      1. ``real_1``    — the configured payload, marker A
+      2. ``real_2``    — the configured payload again, marker B (fresh run_id)
+      3. ``negative``  — ``negative_arguments`` (no shell metacharacters), marker C
+
+    Aggregate verdict:
+
+      - real_1 fires + real_2 fires + negative does NOT fire → ``vulnerable`` (strong)
+      - real_1 fires + real_2 fires + negative ALSO fires    → ``echo`` (server reflects all input)
+      - exactly one of real_1 / real_2 fires                 → ``suggestive`` (intermittent)
+      - neither real fires                                    → ``pass``
+    """
+
+    negative_arguments: dict[str, Any] = Field(default_factory=dict)
+    """Payload with no shell metacharacters. Should look like the real payload
+    but with safe content. ``{run_id}`` expanded at call time."""
+
+    negative_marker_template: str
+    """High-entropy marker template for the negative call. ``{run_id}`` is
+    expanded at call time. The substring should appear in the response only
+    if the server reflects raw input — that's the signal we use to classify
+    echo vs vulnerable."""
+
+
 class AuthOverride(BaseModel):
     """Auth state to use for a single probe instead of the scan-wide credentials.
 
@@ -162,6 +191,10 @@ class TestCase(BaseModel):
     """Required for ``surface: authz`` probes; ignored otherwise."""
     matcher: Optional[Matcher] = None
     """Required for tool_call / tool_list / authz surfaces; ignored for ``auth``."""
+    corroborate: Optional[CorroborateSpec] = None
+    """Optional. When set on a ``marker_echo`` probe, scanner runs 3 calls per
+    matched tool (real_1 + real_2 + negative) and produces a single aggregated
+    finding. Ignored on non-``marker_echo`` matchers."""
 
     @field_validator("id")
     @classmethod
