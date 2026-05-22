@@ -79,6 +79,13 @@ class Matcher(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuthzPhase(BaseModel):
+    """A single phase (call) of a two-credential authz probe."""
+
+    tool: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class AuthOverride(BaseModel):
     """Auth state to use for a single probe instead of the scan-wide credentials.
 
@@ -108,12 +115,18 @@ class TestCase(BaseModel):
     id: str
     """Dotted identifier, e.g. ``mcp.command.shell_marker``."""
 
-    surface: Literal["tool_call", "tool_list", "resource_list", "prompt_list", "auth"]
+    surface: Literal[
+        "tool_call", "tool_list", "resource_list", "prompt_list", "auth", "authz"
+    ]
     """Which MCP surface the test exercises.
 
-    ``auth`` probes open a fresh connection with overridden credentials and
-    classify based on whether the handshake succeeds. They do not use the
-    matcher field — the verdict comes from connection success/failure.
+    ``auth``  — opens a fresh connection with overridden credentials and
+    classifies based on handshake success/failure. No matcher.
+
+    ``authz`` — two-credential probe. Runs ``phase_a`` (sanity-check: A can
+    read its own object) then ``phase_b`` (B attempts the same read). The
+    matcher is applied to ``phase_b``'s response. Skipped if the operator
+    didn't provide ``--cred-a`` / ``--cred-b`` / ``--foreign-id``.
     """
 
     description: str
@@ -144,8 +157,11 @@ class TestCase(BaseModel):
     payload: Payload = Field(default_factory=Payload)
     auth_override: Optional[AuthOverride] = None
     """Required for ``surface: auth`` probes; ignored otherwise."""
+    phase_a: Optional[AuthzPhase] = None
+    phase_b: Optional[AuthzPhase] = None
+    """Required for ``surface: authz`` probes; ignored otherwise."""
     matcher: Optional[Matcher] = None
-    """Required for ``surface: tool_call`` / ``tool_list`` / etc.; ignored for ``auth``."""
+    """Required for tool_call / tool_list / authz surfaces; ignored for ``auth``."""
 
     @field_validator("id")
     @classmethod
@@ -155,17 +171,28 @@ class TestCase(BaseModel):
         return v
 
     def model_post_init(self, _ctx: Any) -> None:
-        """Cross-field validation: surface determines which of matcher/auth_override is required."""
+        """Cross-field validation: surface determines which fields are required."""
         if self.surface == "auth":
             if self.auth_override is None:
                 raise ValueError(
                     f"TestCase {self.id!r}: surface=auth requires auth_override"
                 )
-        else:
+            return
+        if self.surface == "authz":
+            if self.phase_a is None or self.phase_b is None:
+                raise ValueError(
+                    f"TestCase {self.id!r}: surface=authz requires phase_a and phase_b"
+                )
             if self.matcher is None:
                 raise ValueError(
-                    f"TestCase {self.id!r}: surface={self.surface} requires a matcher"
+                    f"TestCase {self.id!r}: surface=authz requires a matcher (applied to phase_b response)"
                 )
+            return
+        # tool_call / tool_list / resource_list / prompt_list
+        if self.matcher is None:
+            raise ValueError(
+                f"TestCase {self.id!r}: surface={self.surface} requires a matcher"
+            )
 
 
 def load_library(path: Path | str) -> list[TestCase]:

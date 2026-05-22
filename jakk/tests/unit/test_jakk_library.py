@@ -20,6 +20,7 @@ EXPECTED_IDS = {
     "mcp.auth.no_credential",
     "mcp.auth.invalid_token",
     "mcp.auth.wrong_prefix",
+    "mcp.authz.cross_tenant_read",
 }
 
 SAFE_IDS = {
@@ -29,6 +30,7 @@ SAFE_IDS = {
     "mcp.auth.no_credential",
     "mcp.auth.invalid_token",
     "mcp.auth.wrong_prefix",
+    "mcp.authz.cross_tenant_read",
 }
 
 
@@ -54,10 +56,14 @@ def test_each_case_has_required_fields():
             "resource_list",
             "prompt_list",
             "auth",
+            "authz",
         }
         if case.surface == "auth":
             assert case.auth_override is not None
             assert case.auth_override.mode in {"none", "garbage", "wrong_prefix"}
+        elif case.surface == "authz":
+            assert case.phase_a is not None and case.phase_b is not None
+            assert case.matcher is not None
         else:
             assert case.matcher is not None
             assert case.matcher.kind
@@ -210,3 +216,39 @@ def test_auth_surface_with_valid_auth_override_loads():
     assert case.auth_override is not None
     assert case.auth_override.mode == "none"
     assert case.matcher is None
+
+
+def test_authz_surface_requires_phases_and_matcher():
+    """surface=authz needs phase_a, phase_b, AND matcher."""
+    with pytest.raises(Exception, match="phase_a and phase_b"):
+        TestCase(
+            id="bad.authz",
+            surface="authz",
+            description="x",
+            expected_signal="x",
+            matcher={"kind": "substring", "params": {"needle": "x"}},
+        )
+
+    with pytest.raises(Exception, match="matcher"):
+        TestCase(
+            id="bad.authz.nomatch",
+            surface="authz",
+            description="x",
+            expected_signal="x",
+            phase_a={"tool": "t", "arguments": {}},
+            phase_b={"tool": "t", "arguments": {}},
+        )
+
+
+def test_authz_surface_happy_path_loads():
+    case = TestCase(
+        id="ok.authz",
+        surface="authz",
+        description="x",
+        expected_signal="x",
+        phase_a={"tool": "fetch", "arguments": {"id": "{foreign_id}", "cred": "{cred_a}"}},
+        phase_b={"tool": "fetch", "arguments": {"id": "{foreign_id}", "cred": "{cred_b}"}},
+        matcher={"kind": "substring", "params": {"needle": "tenant_alpha"}},
+    )
+    assert case.phase_a.tool == "fetch"
+    assert case.phase_b.arguments["cred"] == "{cred_b}"

@@ -18,6 +18,9 @@ class ScanConfig:
     timeout_s: float = 15.0
     bearer: Optional[str] = None
     headers: Optional[dict[str, str]] = None
+    cred_a: Optional[str] = None
+    cred_b: Optional[str] = None
+    foreign_id: Optional[str] = None
 
 
 def _run_id() -> str:
@@ -73,10 +76,14 @@ async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
     # Auth probes don't use the shared client (they need overridden credentials);
     # run them first against fresh per-probe connections.
     auth_cases = [c for c in cases if c.surface == "auth"]
-    other_cases = [c for c in cases if c.surface != "auth"]
+    authz_cases = [c for c in cases if c.surface == "authz"]
+    other_cases = [c for c in cases if c.surface not in ("auth", "authz")]
 
     for case in auth_cases:
         findings.append(await _run_auth_case(case, cfg))
+
+    for case in authz_cases:
+        findings.append(await _run_authz_case(case, cfg))
 
     if other_cases:
         async with MCPClient(
@@ -90,6 +97,102 @@ async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
             for case in other_cases:
                 findings.extend(await _run_case(client, case, tools, tools_ctx, cfg))
     return findings
+
+
+def _expand_authz_template(value: Any, cfg: ScanConfig, run_id: str) -> Any:
+    """Expand {cred_a} / {cred_b} / {foreign_id} / {run_id} in string values."""
+    if not isinstance(value, str):
+        return value
+    return (
+        value.replace("{cred_a}", cfg.cred_a or "")
+        .replace("{cred_b}", cfg.cred_b or "")
+        .replace("{foreign_id}", cfg.foreign_id or "")
+        .replace("{run_id}", run_id)
+    )
+
+
+async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
+    """Two-credential cross-tenant probe."""
+    # Skip cleanly if the operator didn't supply the required identities.
+    missing: list[str] = []
+    if not cfg.cred_a:
+        missing.append("--cred-a")
+    if not cfg.cred_b:
+        missing.append("--cred-b")
+    if not cfg.foreign_id:
+        missing.append("--foreign-id")
+    if missing:
+        return Finding(
+            test_id=case.id,
+            expected_signal=case.expected_signal,
+            severity=case.severity,
+            surface=case.surface,
+            endpoint=cfg.endpoint,
+            fired=False,
+            outcome="skipped",
+            evidence=f"authz probe requires {' / '.join(missing)}",
+            owasp=list(case.owasp),
+            atlas=list(case.atlas),
+        )
+
+    run_id = _run_id()
+    phase_a = case.phase_a
+    phase_b = case.phase_b
+    assert phase_a is not None and phase_b is not None  # validated at load time
+    a_args = {k: _expand_authz_template(v, cfg, run_id) for k, v in phase_a.arguments.items()}
+    b_args = {k: _expand_authz_template(v, cfg, run_id) for k, v in phase_b.arguments.items()}
+
+    async with MCPClient(
+        cfg.endpoint,
+        timeout_s=cfg.timeout_s,
+        bearer=cfg.bearer,
+        headers=cfg.headers,
+    ) as client:
+        call_a = await client.call_tool(phase_a.tool, a_args)
+        # Sanity check: A should be able to read its own object. If not, the
+        # foreign_id is wrong or A's credential is invalid — emit error rather
+        # than misclassify a probe-config bug as "not vulnerable".
+        if call_a.is_error:
+            return Finding(
+                test_id=case.id,
+                expected_signal=case.expected_signal,
+                severity=case.severity,
+                surface=case.surface,
+                endpoint=cfg.endpoint,
+                fired=False,
+                outcome="error",
+                tool_name=phase_a.tool,
+                evidence=f"phase_a (identity A) failed — check --cred-a and --foreign-id: {call_a.text[:200]}",
+                owasp=list(case.owasp),
+                atlas=list(case.atlas),
+                payload={"phase_a": {"tool": phase_a.tool, "arguments": a_args}},
+            )
+
+        call_b = await client.call_tool(phase_b.tool, b_args)
+
+    # Run the matcher against B's response. The matcher's params may reference
+    # ``{run_id}`` and template tokens; expand those.
+    assert case.matcher is not None
+    params = {k: _expand_authz_template(v, cfg, run_id) for k, v in case.matcher.params.items()}
+    result = run_matcher(case.matcher.kind, params, call_b.text, {})
+
+    return Finding(
+        test_id=case.id,
+        expected_signal=case.expected_signal,
+        severity=case.severity,
+        surface=case.surface,
+        endpoint=cfg.endpoint,
+        fired=result.fired,
+        outcome=result.outcome,
+        tool_name=phase_b.tool,
+        evidence=(result.evidence or f"phase_b response: {call_b.text[:200]}"),
+        owasp=list(case.owasp),
+        atlas=list(case.atlas),
+        payload={
+            "phase_a": {"tool": phase_a.tool, "arguments": a_args},
+            "phase_b": {"tool": phase_b.tool, "arguments": b_args},
+        },
+    )
 
 
 async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:

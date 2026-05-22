@@ -57,6 +57,24 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Custom HTTP header. Pass multiple times for multiple headers.",
     )
     scan_p.add_argument(
+        "--cred-a",
+        metavar="VALUE",
+        help="Identity A's credential. Threaded into authz probe payloads as "
+        "{cred_a}. Often a tool-arg API key (not an HTTP bearer).",
+    )
+    scan_p.add_argument(
+        "--cred-b",
+        metavar="VALUE",
+        help="Identity B's credential. Threaded into authz probe payloads as {cred_b}.",
+    )
+    scan_p.add_argument(
+        "--foreign-id",
+        metavar="VALUE",
+        help="Object identifier belonging to A's tenant. Threaded into authz "
+        "probe payloads as {foreign_id}. B attempts to read this; success = "
+        "cross-tenant authz failure.",
+    )
+    scan_p.add_argument(
         "--jsonl",
         type=Path,
         help="Write findings as JSONL to this path (in addition to console output).",
@@ -129,6 +147,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         timeout_s=args.timeout,
         bearer=bearer,
         headers=headers or None,
+        cred_a=args.cred_a,
+        cred_b=args.cred_b,
+        foreign_id=args.foreign_id,
     )
     findings = asyncio.run(run_scan(selected, cfg))
 

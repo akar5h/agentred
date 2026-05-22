@@ -48,6 +48,7 @@ jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library jakk/library
 | `mcp.auth.no_credential` | MCP10 | critical | safe | `auth.anonymous_access` | [tests/mcp.auth.no_credential.md](tests/mcp.auth.no_credential.md) |
 | `mcp.auth.invalid_token` | MCP10 | critical | safe | `auth.token_not_validated` | [tests/mcp.auth.invalid_token.md](tests/mcp.auth.invalid_token.md) |
 | `mcp.auth.wrong_prefix` | MCP10 | high | safe | `auth.scheme_not_enforced` | [tests/mcp.auth.wrong_prefix.md](tests/mcp.auth.wrong_prefix.md) |
+| `mcp.authz.cross_tenant_read` | MCP08 | critical | safe | `authz.cross_tenant_read` | [tests/mcp.authz.cross_tenant_read.md](tests/mcp.authz.cross_tenant_read.md) |
 
 `--safe` runs only the rows with `side_effect: safe` — the 3 auth probes + the 3 response/schema probes (6 total). Use it against any server where state mutation is unacceptable (production, commercial, anything you don't own).
 
@@ -55,7 +56,7 @@ jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library jakk/library
 
 ```yaml
 id: <dotted slug>                # required, unique across library
-surface: tool_call | tool_list | resource_list | prompt_list | auth
+surface: tool_call | tool_list | resource_list | prompt_list | auth | authz
 description: |
   Free-form prose.
 owasp: [MCP01, MCP05, ...]       # optional, used by --owasp filter
@@ -88,6 +89,18 @@ matcher:
 auth_override:
   mode: none | garbage | wrong_prefix
   expect_success: vulnerable | pass   # default vulnerable
+
+# Required when surface == "authz" (in addition to matcher):
+phase_a:                          # A reads A's own object (sanity check)
+  tool: <tool name>
+  arguments:
+    <object-id-key>: "{foreign_id}"
+    <credential-key>: "{cred_a}"
+phase_b:                          # B attempts the same read
+  tool: <tool name>
+  arguments:
+    <object-id-key>: "{foreign_id}"
+    <credential-key>: "{cred_b}"
 ```
 
 Matchers receive a `{run_id}`-templated copy of `params`. `marker_template`
@@ -101,3 +114,6 @@ is conventionally promoted into `marker` after template expansion.
 | `--bearer TOKEN` | Send `Authorization: Bearer <token>` on every request. |
 | `--oauth-token-file PATH` | Read bearer from file (CI secrets). Mutually exclusive with `--bearer`. |
 | `--header KEY=VALUE` | Custom HTTP header. Pass multiple times. |
+| `--cred-a VALUE` | Identity A's credential for authz probes. Template: `{cred_a}`. |
+| `--cred-b VALUE` | Identity B's credential for authz probes. Template: `{cred_b}`. |
+| `--foreign-id VALUE` | Object ID owned by A's tenant. Template: `{foreign_id}`. |
