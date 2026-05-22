@@ -38,6 +38,15 @@ tool-argument `api_key`; a Slack-style MCP would use the HTTP bearer
 arguments wouldn't reference them — they'd be set via `--bearer` per
 call instead). This generality is intentional.
 
+## Threat model
+**What "vulnerable" means here:** the server *authenticates* the caller (validates that the credential is real) but doesn't *authorize* the specific resource (doesn't check that the credential's identity owns the requested object). Classic confused-deputy / BOLA (Broken Object-Level Authorization).
+
+**Harm:** paying customers of a multi-tenant service read each other's data. Contracts, customer lists, financial records, PII, employee data, internal documents. In B2B SaaS this is typically the highest-impact bug class — often triggers public disclosure obligations (GDPR, SOC2, customer breach notifications).
+
+**Harmed parties:** every other tenant of the service. The "attacker" is any paying customer; no exploitation skill required, just guessing or knowing other tenants' resource IDs (which are frequently predictable — sequential, low-entropy UUIDs, customer-name slugs).
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Skip if any of `--cred-a` / `--cred-b` / `--foreign-id` missing.
 2. Expand `{cred_a}` / `{cred_b}` / `{foreign_id}` / `{run_id}` in

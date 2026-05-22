@@ -21,6 +21,15 @@ catches a critical class. Should run unconditionally against every
 server jakk meets — including read-only / production endpoints where
 calling tools is risky.
 
+## Threat model
+**What "vulnerable" means here:** the server's `tools/list` response contains directives smuggled into tool descriptions or parameter docs — the Invariant Labs tool-poisoning pattern. The LLM ingests these descriptions during tool-selection *before* any tool is called.
+
+**Harm:** passive LLM manipulation. The agent is steered without the user's awareness, before any explicit interaction. Smuggled directives can leak the system prompt, bias tool selection, or pre-load the LLM to misbehave on later turns.
+
+**Harmed parties:** user (LLM steered without their knowledge), LLM host (guardrails bypassed at the protocol layer, below the chat surface).
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Call `tools/list`.
 2. For each tool, concatenate top-level `description`, `instructions`,

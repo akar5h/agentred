@@ -23,6 +23,15 @@ that the server's logic gets a token it *would* have accepted if
 correctly formatted. Without `--bearer` there's nothing to mutate;
 the probe emits a `skipped` finding with explanatory evidence.
 
+## Threat model
+**What "vulnerable" means here:** the server accepted the bearer token *without* the `Bearer ` scheme prefix. Loose string-match auth logic (`if token in header`) rather than proper header parsing per RFC 6750. Other malformed variants (`bearer <token>`, `BEARER <token>`, extra whitespace) usually slip through the same code path.
+
+**Harm:** an attacker who has obtained a token through any channel (logs, accidental disclosure, prior breach) can present it in malformed forms that bypass auth normalization layers. Often a leading indicator that the auth implementation needs review across the board.
+
+**Harmed parties:** users whose tokens have leaked anywhere (which, given the prevalence of logs containing Authorization headers, is more than people think).
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Read scan-wide `cfg.bearer`. If empty → emit `skipped`.
 2. Set `Authorization: <bearer>` (no scheme prefix) on the transport.

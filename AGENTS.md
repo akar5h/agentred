@@ -13,10 +13,21 @@ can pick up the same rules.
 This workspace contains multiple independent codebases. Before doing any work, explicitly
 confirm which directory is in-scope and which ones must not be touched.
 
-Common directories:
+Common directories in THIS repo (`deeppeak-harness/`):
+- `grafted/`: multi-turn LLM-adaptive red-teaming engine. MUZZLE loop, AgentDojo + HTTP campaign paths, strategic memory.
+- `jakk/`: black-box MCP scanner (separate package, own `pyproject.toml`). Single-call deterministic probes. v0.2 ships 11 probes across 6 surfaces (tool_call, tool_list, resource_list, prompt_list, auth, authz). See `docs/jakk/` for catalog + threat models.
+- `examples/external_targets/`: docker-compose registry of vulnerable / secure MCP labs (breach-to-fix ch01 / ch02 / ch08).
+- `harness/`: legacy package directory (predates the `grafted/` rename in Phase 1.7). Not imported; safe to ignore.
+
+Common directories OUTSIDE this repo (siblings of `deeppeak-harness/`):
 - `agentic-rag-lab/`: RAG service (FastAPI) + seeded corpus (tenant_id-based).
 - `rag-redteam/`: RAG red-teaming suite (catalogs, fixtures, evaluators, orchestrators).
 - `redteam-platform/` and/or `rt-box/`: main red teaming platform/app (orchestration, UI, infra).
+
+`grafted` and `jakk` are sibling packages with deliberately different
+philosophies: grafted is LLM-driven multi-turn; jakk is deterministic
+single-call. Don't propose merging them, and don't move probes from one
+to the other without explicit direction.
 
 Mandatory:
 - If the request is ambiguous across projects, pause and ask which directory is the target.

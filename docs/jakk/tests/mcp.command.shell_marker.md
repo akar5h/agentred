@@ -22,6 +22,15 @@ in `examples/external_targets/_vendor/mcp-breach-to-fix-labs/08-.../vulnerable/s
 The vulnerable server runs `subprocess.run(f"git init --bare {target}", shell=True)`
 and returns the captured stdout/stderr — so an echoed marker is conclusive.
 
+## Threat model
+**What "vulnerable" means here:** the server interpolates a tool argument into a shell command (`shell=True` subprocess, `os.system`, `eval`-of-a-template). The marker showed up *without* its `$(echo …)` wrapper, proving the substitution executed.
+
+**Harm:** arbitrary code execution as the server process. An attacker can read any file the server reads, connect outbound, plant a backdoor, pivot to adjacent services. For MCP, the attacker is anything feeding the LLM untrusted content (an email, a GitHub issue, a webpage) — indirect injection turns "LLM read this" into "LLM call vulnerable tool with my args".
+
+**Harmed parties:** server operator (compromised infra), LLM host (their agent was weaponized), user (their data + credentials).
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Filter `tools/list` by `applies_to.tool_name_regex` and `min_string_args ≥ 1`.
 2. For each matched tool, build arguments mapping its first string-typed

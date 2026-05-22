@@ -19,6 +19,15 @@ naive `startswith` anti-pattern that also appears in
 `examples/vulnerable_server/team_kb_mcp/server.py` (the `export_page_markdown`
 helper).
 
+## Threat model
+**What "vulnerable" means here:** the server's `startswith(ALLOWED_DIR)` check is naive — a sibling directory whose name *starts with* the allowlist string sneaks through. The probe demonstrated the bypass landed (we saw the forbidden directory name in the response).
+
+**Harm:** the attacker reads files outside the intended scope — adjacent customer / tenant data on a multi-tenant server, server-side config and secrets, source code, deployment scripts, environment files. Same indirect-injection path: untrusted content tells the LLM to read a path the server's naive check accepts.
+
+**Harmed parties:** primarily *other tenants* whose data lives adjacent to the intended allowlist. Server operator's own infrastructure secrets are also at risk.
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Find any tool whose name matches `list_directory|read_file|directory|file|path|read|list`
    and has at least one string arg.

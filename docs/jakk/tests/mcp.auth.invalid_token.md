@@ -16,6 +16,15 @@ that *checks for the presence* of a Bearer header but doesn't *verify*
 the token (e.g. forgotten JWT signature check, mis-wired introspection
 endpoint, or `if header.startswith("Bearer ")` and nothing else).
 
+## Threat model
+**What "vulnerable" means here:** the server accepted a `Bearer garbage-<rand>` token. Either the auth middleware checks for the *presence* of an Authorization header without verifying the token (forgotten JWT signature check, mis-wired introspection endpoint) or it accepts any bearer-shaped string.
+
+**Harm:** functionally equivalent to no_credential — anyone who knows the endpoint URL can call every tool. Slightly worse signal-wise: the server is misleading about being authenticated.
+
+**Harmed parties:** same as no_credential — every user behind the server, plus the operator.
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Generate a fresh per-run token: `garbage-<hex>` (8 random bytes).
 2. Set `Authorization: Bearer garbage-<hex>` on the transport.

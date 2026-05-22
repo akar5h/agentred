@@ -184,13 +184,18 @@ If jakk runs first and finds `mcp.command.shell_marker` firing on `init_bare_rep
 This isn't a roadmap — it's the next-step ranking based on what would
 move the project the furthest toward "useful against commercial MCPs."
 
-1. **Auth + transport flags** — `--bearer`, `--header`, `--oauth-token-file`. Without these, jakk literally cannot run against any commercial target. Largest gating item.
-2. **`side_effect` classification + `--safe` flag** — needed before any scan that might post messages / create resources / send notifications.
-3. **`mcp.authz.cross_tenant_read` probe class** — highest-value missing class for commercial MCPs.
-4. **Corroboration logic** — differential probe + negative canary for the existing `mcp.command.*` family. Cuts FP rate before we leave the lab.
-5. **One real target** — pick GitHub MCP (docker container available, scope clear via bug bounty) and run the hardened library. Find out what we don't know we don't know.
-6. **Dedup `_flatten_content` output** — small but quality-of-life.
-7. **Schema-shape `applies_to`** — only if §1 finds we're missing matches in practice.
+**Status update 2026-05-22 (same-day v0.2):** items 1-4 shipped as a
+four-commit branch (`jakk-v0.2`). Items 5-7 remain open. See
+[2026-05-22_v0.2_discovery.md](2026-05-22_v0.2_discovery.md) for the
+v0.2 synthesis.
+
+1. ~~**Auth + transport flags**~~ — ✅ shipped. `--bearer`, `--header`, `--oauth-token-file`, with auth_override modes for misconfig probes.
+2. ~~**`side_effect` classification + `--safe` flag**~~ — ✅ shipped. Binary `safe | unsafe` (default unsafe), all 7 v0.1 YAMLs annotated, `--safe` filters at CLI.
+3. ~~**`mcp.authz.cross_tenant_read` probe class**~~ — ✅ shipped. Surface=authz, two-phase probe with `--cred-a`/`--cred-b`/`--foreign-id` template tokens, concrete YAML targeting ch01.
+4. ~~**Corroboration logic**~~ — ✅ shipped. 3-call differential + negative-canary for marker_echo probes. Aggregate verdict uses per-call shell-syntax classification (not naive aggregate `fired` booleans — that was a fix landed during Day 4 smoke).
+5. **One real target** — ⏸ open. Pick GitHub MCP (docker container available, scope clear via bug bounty) and run the hardened library. Find out what we don't know we don't know.
+6. **Dedup `_flatten_content` output** — ⏸ open. Small but quality-of-life.
+7. **Schema-shape `applies_to`** — ⏸ open. Only if §5 finds we're missing matches in practice.
 
 What we explicitly *should not* do next:
 - Random schema fuzzing (mountain of FPs; existing tools like PromptFoo/Garak don't help here either).

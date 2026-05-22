@@ -29,6 +29,15 @@ probe deliberately scopes to `read_file`/`get_file`/`cat_file`/...
 variants. Avoiding list tools also keeps the probe from spamming
 unnecessary calls.
 
+## Threat model
+**What "vulnerable" means here:** path traversal works *and* exfiltration completed — the canary file's contents flowed back through the tool response. Pairs with `prefix_bypass` (sink) to form a sink + impact proof chain.
+
+**Harm:** content-level exfiltration. Whatever was in the canary file is now readable to anyone who can call the tool. In a real deployment that's adjacent-tenant documents, secrets stored as files, internal reports, customer attachments.
+
+**Harmed parties:** other tenants of the multi-tenant service; server operator if internal secrets are reachable via the same flaw.
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Filter `tools/list` by the file-read regex (`^(read_file|get_file|
    cat_file|file_contents|read_file_contents|fetch_file)`).

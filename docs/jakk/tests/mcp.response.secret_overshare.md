@@ -15,6 +15,15 @@ read" as a top finding. This is a one-network-call probe with high
 return — if your `list_servers` or `get_config` happens to dump
 `API_KEY=…` in the response, jakk catches it before any LLM gets near it.
 
+## Threat model
+**What "vulnerable" means here:** a benign-looking read tool returned secret-shaped strings in its response — API keys, PEM blocks, passwords, tokens — content the server should not be exposing to callers.
+
+**Harm:** any agent or operator who calls the tool receives the secrets. LLM transcripts are usually logged (Langfuse, Phoenix, CloudWatch) — those secrets land in observability infrastructure. If the LLM summarizes the response back to the user or forwards it to another tool, the secrets travel further.
+
+**Harmed parties:** server operator (their secrets exposed), user (their credentials may be among the leaked values). No active attacker required — this is a self-inflicted leak; any caller harvests it.
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Pick the first tool matching `^(list|get|read|describe|status|info|inventory|repositories|files|tools)`.
 2. Call with empty arguments (works if no required args; otherwise the

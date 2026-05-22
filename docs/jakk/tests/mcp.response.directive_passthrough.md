@@ -15,6 +15,15 @@ canonical example. Realistic instances: notification feeds, news/RSS
 helpers, message inboxes — anywhere the tool returns content that
 originated outside the server's trust boundary.
 
+## Threat model
+**What "vulnerable" means here:** the tool's response contains content that *issues instructions to the LLM* (`SYSTEM:`, `Ignore previous instructions`, `<SYSTEM>…</SYSTEM>`, `You are now…`). The response is an indirect-prompt-injection surface even when the *input* was benign.
+
+**Harm:** the LLM is hijacked mid-task. Attacker can steer it to exfiltrate the user's data, call destructive tools, leak the system prompt, or return misleading output. The user thinks they're talking to their agent; they're talking to whoever planted the content.
+
+**Harmed parties:** user (agent hijacked) and operator (their tool became an injection surface, likely without their knowledge).
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 1. Pick any tool matching `^(list|get|read|describe|status|info|news|search|fetch|message|messages|notifications)`.
 2. Call with empty arguments.

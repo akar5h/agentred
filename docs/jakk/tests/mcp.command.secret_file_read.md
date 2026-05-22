@@ -24,6 +24,15 @@ finding tells you the *impact* is filesystem disclosure. Both should be
 in a basic MCP scanner — together they form a minimal proof-chain
 (vector → consequence) that's easy to triage.
 
+## Threat model
+**What "vulnerable" means here:** the shell injection from `shell_marker` is real *and* the attacker can extract files. The probe demonstrates not just the sink but the impact tier.
+
+**Harm:** filesystem disclosure as the server process. `/etc/passwd`, `~/.ssh/id_rsa`, `/app/secrets/*`, any deployment config the server has read access to. Pair with outbound network access (curl/wget) and the attacker has a full exfiltration channel.
+
+**Harmed parties:** server operator (secrets exposed, infrastructure mapped), LLM host (agent weaponized), user (credentials in the leaked files).
+
+See [../threat-models.md](../threat-models.md) for the full class.
+
 ## How it fires
 Same pattern as `shell_marker`. The matcher is `secret_pattern`, which
 recognises:
