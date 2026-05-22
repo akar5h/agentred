@@ -1,5 +1,6 @@
 id: mcp.schema.description_smuggling
 surface: tool_list
+side_effect: safe  # tools/list call only; no tool invocation
 description: |
   Tool-poisoning via schema description (Invariant Labs writeup). The
   server discloses tools whose descriptions contain hidden directives

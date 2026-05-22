@@ -1,5 +1,6 @@
 id: mcp.command.shell_marker
 surface: tool_call
+side_effect: unsafe  # injects shell metacharacters; may create directories or run commands
 description: |
   Inject a shell command substitution carrying a unique per-run marker
   into the first string argument of any plausibly-shell-backed tool.

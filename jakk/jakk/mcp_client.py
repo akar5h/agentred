@@ -62,17 +62,78 @@ class MCPClient:
         async with MCPClient(endpoint) as c:
             tools = await c.list_tools()
             result = await c.call_tool(name, {"x": 1})
+
+    Auth + headers:
+
+        async with MCPClient(endpoint, bearer="abc123") as c: ...
+        async with MCPClient(endpoint, headers={"X-Api-Key": "..."}) as c: ...
+
+    The bearer shortcut is equivalent to ``auth="abc123"`` which fastmcp
+    translates into ``Authorization: Bearer abc123``. Custom headers go
+    through the streamable-HTTP transport directly.
     """
 
-    def __init__(self, endpoint: str, timeout_s: float = 15.0) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        timeout_s: float = 15.0,
+        bearer: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
+        auth_override: Optional[str] = None,
+    ) -> None:
+        """
+        :param bearer: bearer token; sent as ``Authorization: Bearer <token>``.
+        :param headers: additional headers merged into every request.
+        :param auth_override: special-case for auth-misconfig probes. Accepted
+            values:
+              - ``"none"``      — strip all auth (bearer + Authorization header)
+              - ``"garbage"``   — send ``Authorization: Bearer garbage-<rand>``
+              - ``"wrong_prefix"`` — send the bearer token without the ``Bearer ``
+                prefix (i.e. raw token in the Authorization header).
+            When set, takes precedence over ``bearer`` and any Authorization
+            entry in ``headers``.
+        """
         self.endpoint = endpoint
         self.timeout_s = timeout_s
+        self.bearer = bearer
+        self.headers = dict(headers or {})
+        self.auth_override = auth_override
         self._client = None
         self._ctx = None
 
+    def _resolve_transport_kwargs(self) -> dict[str, Any]:
+        """Compute (headers, auth) for the underlying transport, honouring auth_override."""
+        headers = dict(self.headers)
+        auth: Optional[str] = self.bearer
+
+        if self.auth_override is None:
+            return {"headers": headers or None, "auth": auth}
+
+        # Strip any existing auth state before applying the override.
+        headers.pop("Authorization", None)
+        headers.pop("authorization", None)
+        if self.auth_override == "none":
+            return {"headers": headers or None, "auth": None}
+        if self.auth_override == "garbage":
+            import secrets as _secrets
+            headers["Authorization"] = f"Bearer garbage-{_secrets.token_hex(8)}"
+            return {"headers": headers, "auth": None}
+        if self.auth_override == "wrong_prefix":
+            if not self.bearer:
+                raise ValueError(
+                    "auth_override='wrong_prefix' requires a bearer token to mutate"
+                )
+            headers["Authorization"] = self.bearer  # raw token, no 'Bearer ' prefix
+            return {"headers": headers, "auth": None}
+        raise ValueError(f"unknown auth_override: {self.auth_override!r}")
+
     async def __aenter__(self) -> "MCPClient":
-        from fastmcp import Client  # local import: heavy dep
-        self._client = Client(self.endpoint, timeout=self.timeout_s)
+        from fastmcp import Client
+        from fastmcp.client.transports import StreamableHttpTransport
+
+        kw = self._resolve_transport_kwargs()
+        transport = StreamableHttpTransport(self.endpoint, headers=kw["headers"], auth=kw["auth"])
+        self._client = Client(transport, timeout=self.timeout_s)
         self._ctx = await self._client.__aenter__()
         return self
 

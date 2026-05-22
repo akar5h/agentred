@@ -1,5 +1,6 @@
 id: mcp.path.prefix_bypass
 surface: tool_call
+side_effect: unsafe  # deliberately traverses outside allowlisted directory
 description: |
   CVE-2025-53110-class: server validates an allowlisted base directory
   with `startswith(ALLOWED_DIR)` instead of resolving + checking the

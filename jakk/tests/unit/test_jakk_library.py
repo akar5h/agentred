@@ -17,6 +17,18 @@ EXPECTED_IDS = {
     "mcp.response.secret_overshare",
     "mcp.response.directive_passthrough",
     "mcp.schema.description_smuggling",
+    "mcp.auth.no_credential",
+    "mcp.auth.invalid_token",
+    "mcp.auth.wrong_prefix",
+}
+
+SAFE_IDS = {
+    "mcp.response.secret_overshare",
+    "mcp.response.directive_passthrough",
+    "mcp.schema.description_smuggling",
+    "mcp.auth.no_credential",
+    "mcp.auth.invalid_token",
+    "mcp.auth.wrong_prefix",
 }
 
 
@@ -36,8 +48,19 @@ def test_each_case_has_required_fields():
         assert case.id
         assert case.description
         assert case.expected_signal
-        assert case.matcher.kind
-        assert case.surface in {"tool_call", "tool_list", "resource_list", "prompt_list"}
+        assert case.surface in {
+            "tool_call",
+            "tool_list",
+            "resource_list",
+            "prompt_list",
+            "auth",
+        }
+        if case.surface == "auth":
+            assert case.auth_override is not None
+            assert case.auth_override.mode in {"none", "garbage", "wrong_prefix"}
+        else:
+            assert case.matcher is not None
+            assert case.matcher.kind
 
 
 def test_filter_cases_by_select():
@@ -53,6 +76,30 @@ def test_filter_cases_by_owasp():
     assert "mcp.command.shell_marker" in ids
     assert "mcp.command.secret_file_read" in ids
     assert "mcp.schema.description_smuggling" not in ids
+
+
+def test_filter_cases_safe_only():
+    cases = load_library(LIBRARY_DIR)
+    safe = filter_cases(cases, safe_only=True)
+    ids = {c.id for c in safe}
+    assert ids == SAFE_IDS, f"safe-only filter returned unexpected set: {ids ^ SAFE_IDS}"
+    for c in safe:
+        assert c.side_effect == "safe"
+
+
+def test_safe_only_excludes_command_probes():
+    """Command-injection probes must never be classified safe — they create directories
+    and run shell commands."""
+    cases = load_library(LIBRARY_DIR)
+    safe = filter_cases(cases, safe_only=True)
+    safe_ids = {c.id for c in safe}
+    for unsafe_id in (
+        "mcp.command.shell_marker",
+        "mcp.command.secret_file_read",
+        "mcp.path.prefix_bypass",
+        "mcp.path.canary_file_read",
+    ):
+        assert unsafe_id not in safe_ids, f"{unsafe_id} must not be in --safe set"
 
 
 def test_unique_ids_in_library():
@@ -125,3 +172,41 @@ def test_id_must_be_dotted_slug():
             expected_signal="x",
             matcher={"kind": "substring", "params": {"needle": "x"}},
         )
+
+
+def test_auth_surface_requires_auth_override():
+    """A surface=auth probe without auth_override should fail validation."""
+    with pytest.raises(Exception) as exc_info:
+        TestCase(
+            id="bad.auth",
+            surface="auth",
+            description="x",
+            expected_signal="x",
+        )
+    assert "auth_override" in str(exc_info.value)
+
+
+def test_non_auth_surface_requires_matcher():
+    """A surface=tool_call probe without matcher should fail validation."""
+    with pytest.raises(Exception) as exc_info:
+        TestCase(
+            id="bad.tool_call",
+            surface="tool_call",
+            description="x",
+            expected_signal="x",
+        )
+    assert "matcher" in str(exc_info.value)
+
+
+def test_auth_surface_with_valid_auth_override_loads():
+    """Happy path: surface=auth + auth_override = valid TestCase."""
+    case = TestCase(
+        id="ok.auth",
+        surface="auth",
+        description="x",
+        expected_signal="x",
+        auth_override={"mode": "none", "expect_success": "vulnerable"},
+    )
+    assert case.auth_override is not None
+    assert case.auth_override.mode == "none"
+    assert case.matcher is None

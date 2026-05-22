@@ -32,6 +32,31 @@ def _build_parser() -> argparse.ArgumentParser:
     scan_p.add_argument("--select", help="Run only the test with this id.")
     scan_p.add_argument("--owasp", help="Filter tests by OWASP code (e.g. MCP05).")
     scan_p.add_argument(
+        "--safe",
+        action="store_true",
+        help="Only run probes annotated `side_effect: safe`. Use when scanning "
+        "servers where state mutation is unacceptable (production, commercial).",
+    )
+    scan_p.add_argument(
+        "--bearer",
+        metavar="TOKEN",
+        help="Bearer token. Sent as `Authorization: Bearer <token>`.",
+    )
+    scan_p.add_argument(
+        "--oauth-token-file",
+        type=Path,
+        metavar="PATH",
+        help="Read bearer token from this file (whitespace-stripped). Mutually "
+        "exclusive with --bearer.",
+    )
+    scan_p.add_argument(
+        "--header",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Custom HTTP header. Pass multiple times for multiple headers.",
+    )
+    scan_p.add_argument(
         "--jsonl",
         type=Path,
         help="Write findings as JSONL to this path (in addition to console output).",
@@ -50,6 +75,20 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_headers(values: list[str]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise SystemExit(f"--header expects KEY=VALUE, got {raw!r}")
+        key, _, value = raw.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            raise SystemExit(f"--header key is empty in {raw!r}")
+        headers[key] = value
+    return headers
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -61,15 +100,36 @@ def main(argv: list[str] | None = None) -> int:
 
 def _cmd_scan(args: argparse.Namespace) -> int:
     cases = load_library(args.library)
-    selected = filter_cases(cases, select=args.select, owasp=args.owasp)
+    selected = filter_cases(
+        cases, select=args.select, owasp=args.owasp, safe_only=args.safe
+    )
     if not selected:
         print(
-            f"No tests matched (library={args.library} select={args.select} owasp={args.owasp})",
+            f"No tests matched (library={args.library} select={args.select} "
+            f"owasp={args.owasp} safe={args.safe})",
             file=sys.stderr,
         )
         return 1
 
-    cfg = ScanConfig(endpoint=args.endpoint, timeout_s=args.timeout)
+    if args.bearer and args.oauth_token_file:
+        print("--bearer and --oauth-token-file are mutually exclusive", file=sys.stderr)
+        return 1
+    bearer = args.bearer
+    if args.oauth_token_file:
+        try:
+            bearer = args.oauth_token_file.read_text().strip()
+        except OSError as exc:
+            print(f"failed to read --oauth-token-file: {exc}", file=sys.stderr)
+            return 1
+
+    headers = _parse_headers(args.header)
+
+    cfg = ScanConfig(
+        endpoint=args.endpoint,
+        timeout_s=args.timeout,
+        bearer=bearer,
+        headers=headers or None,
+    )
     findings = asyncio.run(run_scan(selected, cfg))
 
     render_console(findings, endpoint=args.endpoint)

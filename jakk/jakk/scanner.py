@@ -16,6 +16,8 @@ from .mcp_client import MCPClient, ToolDescriptor
 class ScanConfig:
     endpoint: str
     timeout_s: float = 15.0
+    bearer: Optional[str] = None
+    headers: Optional[dict[str, str]] = None
 
 
 def _run_id() -> str:
@@ -67,12 +69,95 @@ def _resolve_matcher_params(params: dict[str, Any], run_id: str) -> dict[str, An
 
 async def run_scan(cases: list[TestCase], cfg: ScanConfig) -> list[Finding]:
     findings: list[Finding] = []
-    async with MCPClient(cfg.endpoint, timeout_s=cfg.timeout_s) as client:
-        tools = await client.list_tools()
-        tools_ctx = [t.to_dict() for t in tools]
-        for case in cases:
-            findings.extend(await _run_case(client, case, tools, tools_ctx, cfg))
+
+    # Auth probes don't use the shared client (they need overridden credentials);
+    # run them first against fresh per-probe connections.
+    auth_cases = [c for c in cases if c.surface == "auth"]
+    other_cases = [c for c in cases if c.surface != "auth"]
+
+    for case in auth_cases:
+        findings.append(await _run_auth_case(case, cfg))
+
+    if other_cases:
+        async with MCPClient(
+            cfg.endpoint,
+            timeout_s=cfg.timeout_s,
+            bearer=cfg.bearer,
+            headers=cfg.headers,
+        ) as client:
+            tools = await client.list_tools()
+            tools_ctx = [t.to_dict() for t in tools]
+            for case in other_cases:
+                findings.extend(await _run_case(client, case, tools, tools_ctx, cfg))
     return findings
+
+
+async def _run_auth_case(case: TestCase, cfg: ScanConfig) -> Finding:
+    """Run a single auth-misconfig probe with overridden credentials."""
+    override = case.auth_override
+    if override is None:
+        return Finding(
+            test_id=case.id,
+            expected_signal=case.expected_signal,
+            severity=case.severity,
+            surface=case.surface,
+            endpoint=cfg.endpoint,
+            fired=False,
+            outcome="error",
+            evidence="surface=auth requires auth_override field; none provided",
+            owasp=list(case.owasp),
+            atlas=list(case.atlas),
+        )
+
+    # wrong_prefix requires a bearer to mutate; skip cleanly when absent.
+    if override.mode == "wrong_prefix" and not cfg.bearer:
+        return Finding(
+            test_id=case.id,
+            expected_signal=case.expected_signal,
+            severity=case.severity,
+            surface=case.surface,
+            endpoint=cfg.endpoint,
+            fired=False,
+            outcome="skipped",
+            evidence="auth_override=wrong_prefix requires --bearer to mutate; none provided",
+            owasp=list(case.owasp),
+            atlas=list(case.atlas),
+        )
+
+    try:
+        async with MCPClient(
+            cfg.endpoint,
+            timeout_s=cfg.timeout_s,
+            bearer=cfg.bearer,
+            headers=cfg.headers,
+            auth_override=override.mode,
+        ) as client:
+            tools = await client.list_tools()
+            # Handshake + list_tools succeeded with intentionally-bad auth.
+            outcome = override.expect_success
+            evidence = (
+                f"server accepted auth_override={override.mode}; "
+                f"list_tools returned {len(tools)} tool(s)"
+            )
+            fired = (outcome == "vulnerable")
+    except Exception as exc:
+        outcome = "pass"
+        evidence = f"server rejected auth_override={override.mode}: {type(exc).__name__}: {exc}"
+        fired = False
+
+    return Finding(
+        test_id=case.id,
+        expected_signal=case.expected_signal,
+        severity=case.severity,
+        surface=case.surface,
+        endpoint=cfg.endpoint,
+        fired=fired,
+        outcome=outcome,
+        evidence=evidence[:300],
+        owasp=list(case.owasp),
+        atlas=list(case.atlas),
+        payload={"auth_override": override.mode},
+    )
 
 
 async def _run_case(

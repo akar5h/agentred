@@ -1,5 +1,6 @@
 id: mcp.path.canary_file_read
 surface: tool_call
+side_effect: unsafe  # reads a file outside intended scope; exfiltration intent
 description: |
   Impact-tier follow-up to `mcp.path.prefix_bypass`. Where prefix_bypass
   proves the `startswith`-style check can be tricked into accepting a

@@ -1,5 +1,6 @@
 id: mcp.response.directive_passthrough
 surface: tool_call
+side_effect: safe  # calls a benign-looking read tool with empty arguments
 description: |
   Call a benign tool and scan the response for model-directed imperatives
   ("SYSTEM:", "Ignore previous instructions", "You are now ...", etc.).

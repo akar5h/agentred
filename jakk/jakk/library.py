@@ -79,6 +79,26 @@ class Matcher(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuthOverride(BaseModel):
+    """Auth state to use for a single probe instead of the scan-wide credentials.
+
+    Used by auth-misconfig probes (``surface: auth``) to deliberately
+    mis-authenticate and check whether the server accepts the request.
+    """
+
+    mode: Literal["none", "garbage", "wrong_prefix"]
+    """- ``none``         — connect with no Authorization header.
+       - ``garbage``      — send ``Authorization: Bearer garbage-<rand>``.
+       - ``wrong_prefix`` — send the scan-wide bearer token *without* the ``Bearer `` prefix.
+         Probe is skipped if the user did not provide a bearer to mutate.
+    """
+
+    expect_success: Literal["vulnerable", "pass"] = "vulnerable"
+    """What it means if the probe *succeeds* (i.e. list_tools returned tools).
+       Default ``vulnerable``: a server that accepts misauth is misconfigured.
+       Operators can flip to ``pass`` for read-public-by-design servers."""
+
+
 class TestCase(BaseModel):
     """One probe in the jakk attack library."""
 
@@ -88,8 +108,13 @@ class TestCase(BaseModel):
     id: str
     """Dotted identifier, e.g. ``mcp.command.shell_marker``."""
 
-    surface: Literal["tool_call", "tool_list", "resource_list", "prompt_list"]
-    """Which MCP surface the test exercises."""
+    surface: Literal["tool_call", "tool_list", "resource_list", "prompt_list", "auth"]
+    """Which MCP surface the test exercises.
+
+    ``auth`` probes open a fresh connection with overridden credentials and
+    classify based on whether the handshake succeeds. They do not use the
+    matcher field — the verdict comes from connection success/failure.
+    """
 
     description: str
 
@@ -101,12 +126,26 @@ class TestCase(BaseModel):
 
     severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
 
+    side_effect: Literal["safe", "unsafe"] = "unsafe"
+    """Whether running this probe can mutate server state.
+
+    - ``safe``   — read-only / schema-only probes. Safe to run unconditionally,
+      including against production servers.
+    - ``unsafe`` — may create / modify / send. Default for conservative reasons:
+      a probe with no annotation must be assumed unsafe until reviewed.
+
+    The ``--safe`` CLI flag filters the library to ``safe`` probes only.
+    """
+
     expected_signal: str
     """Stable class label emitted on the finding (e.g. ``input.command_injection``)."""
 
     applies_to: AppliesTo = Field(default_factory=AppliesTo)
     payload: Payload = Field(default_factory=Payload)
-    matcher: Matcher
+    auth_override: Optional[AuthOverride] = None
+    """Required for ``surface: auth`` probes; ignored otherwise."""
+    matcher: Optional[Matcher] = None
+    """Required for ``surface: tool_call`` / ``tool_list`` / etc.; ignored for ``auth``."""
 
     @field_validator("id")
     @classmethod
@@ -114,6 +153,19 @@ class TestCase(BaseModel):
         if not v or " " in v or "/" in v:
             raise ValueError("id must be a dotted slug with no spaces or slashes")
         return v
+
+    def model_post_init(self, _ctx: Any) -> None:
+        """Cross-field validation: surface determines which of matcher/auth_override is required."""
+        if self.surface == "auth":
+            if self.auth_override is None:
+                raise ValueError(
+                    f"TestCase {self.id!r}: surface=auth requires auth_override"
+                )
+        else:
+            if self.matcher is None:
+                raise ValueError(
+                    f"TestCase {self.id!r}: surface={self.surface} requires a matcher"
+                )
 
 
 def load_library(path: Path | str) -> list[TestCase]:
@@ -154,12 +206,16 @@ def filter_cases(
     cases: Iterable[TestCase],
     select: Optional[str] = None,
     owasp: Optional[str] = None,
+    safe_only: bool = False,
 ) -> list[TestCase]:
-    """Filter by ``--select`` (exact id) and ``--owasp`` (membership in owasp list)."""
+    """Filter by ``--select`` (exact id), ``--owasp`` (membership in owasp list),
+    and ``--safe`` (only ``side_effect: safe`` probes)."""
     out = list(cases)
     if select:
         out = [c for c in out if c.id == select]
     if owasp:
         owasp_upper = owasp.upper()
         out = [c for c in out if any(o.upper() == owasp_upper for o in c.owasp)]
+    if safe_only:
+        out = [c for c in out if c.side_effect == "safe"]
     return out
