@@ -14,13 +14,19 @@ severity: high
 expected_signal: input.path_traversal
 
 applies_to:
-  # Tools that take a path-shaped string arg.
+  # Tools that take a path-shaped string arg. tool_name_regex narrows the
+  # candidate pool (we don't want every list_* tool); target_arg_kind: path
+  # then picks the specific path argument out of multi-arg signatures
+  # (e.g. GitHub's get_file_contents(owner, repo, path, ref) → "path"; ch02's
+  # read_file_contents(file_path) → "file_path"). Tools that match the name
+  # regex but lack a path-shaped arg are filtered out at selection time.
   tool_name_regex: "(?i)(list_directory|read_file|directory|file|path|read|list)"
+  target_arg_kind: path
   min_string_args: 1
 
 payload:
   arguments:
-    __first_string_arg__: "/app/files/safe_files_sensitive/"
+    __target_arg__: "/app/files/safe_files_sensitive/"
 
 matcher:
   # Secret canary lives at /app/files/safe_files_sensitive/secret.txt;

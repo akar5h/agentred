@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from jakk.mcp_client import ToolDescriptor
-from jakk.scanner import _UnresolvedFirstStringArg, _resolve_arguments
+from jakk.scanner import _UnresolvedFirstStringArg, _UnresolvedTargetArg, _resolve_arguments
 
 
 def _tool_with_first_string(arg_name: str = "repo_name") -> ToolDescriptor:
@@ -54,3 +54,79 @@ def test_resolve_arguments_non_string_values_passthrough():
     args = {"count": 5, "items": ["a", "b"], "flag": True}
     out = _resolve_arguments(args, _tool_with_first_string(), "xx")
     assert out == {"count": 5, "items": ["a", "b"], "flag": True}
+
+
+# ---------------------------------------------------------------------------
+# __target_arg__ — C+ kind-based resolution
+# ---------------------------------------------------------------------------
+
+
+def _github_like_get_file_contents() -> ToolDescriptor:
+    """The canonical multi-string-arg signature where position 0 is the
+    wrong place to inject a path payload (it's `owner`, not `path`)."""
+    return ToolDescriptor(
+        name="get_file_contents",
+        input_schema={
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "path": {"type": "string"},
+                "ref": {"type": "string"},
+            },
+            "required": ["owner", "repo", "path"],
+        },
+    )
+
+
+def test_target_arg_resolves_to_kind_matched_arg_not_first():
+    """The whole point of C+: against a multi-arg tool, __target_arg__ lands
+    in the semantically-correct field, not whatever happens to be first."""
+    args = {"__target_arg__": "/etc/passwd"}
+    out = _resolve_arguments(args, _github_like_get_file_contents(), "abc123", "path")
+    assert out == {"path": "/etc/passwd"}
+    # Sanity: __first_string_arg__ would have picked the wrong field.
+    out2 = _resolve_arguments({"__first_string_arg__": "/etc/passwd"}, _github_like_get_file_contents(), "abc123")
+    assert out2 == {"owner": "/etc/passwd"}  # this is exactly the bug C+ fixes
+
+
+def test_target_arg_with_run_id_template():
+    args = {"__target_arg__": "/canary-{run_id}/file"}
+    out = _resolve_arguments(args, _github_like_get_file_contents(), "deadbeef", "path")
+    assert out == {"path": "/canary-deadbeef/file"}
+
+
+def test_target_arg_raises_when_kind_not_set():
+    """Misconfigured YAML: __target_arg__ used but applies_to.target_arg_kind
+    is None. We refuse to guess silently."""
+    args = {"__target_arg__": "anything"}
+    with pytest.raises(_UnresolvedTargetArg, match="target_arg_kind is not set"):
+        _resolve_arguments(args, _github_like_get_file_contents(), "abc123", None)
+
+
+def test_target_arg_raises_when_no_arg_of_kind():
+    """Probe filter SHOULD have excluded this tool at applies_to time. If
+    we get here, the scanner refuses to silently degrade."""
+    args = {"__target_arg__": "anything"}
+    no_path_tool = ToolDescriptor(
+        name="get_repo",
+        input_schema={"properties": {"owner": {"type": "string"}, "repo": {"type": "string"}}},
+    )
+    with pytest.raises(_UnresolvedTargetArg, match="no argument matching"):
+        _resolve_arguments(args, no_path_tool, "abc123", "path")
+
+
+def test_target_arg_and_other_keys_coexist():
+    """A probe can mix __target_arg__ with explicit args + run_id templates."""
+    args = {
+        "__target_arg__": "/canary",
+        "owner": "test-user",
+        "repo": "test-repo",
+        "ref": "main-{run_id}",
+    }
+    out = _resolve_arguments(args, _github_like_get_file_contents(), "xx", "path")
+    assert out == {
+        "path": "/canary",
+        "owner": "test-user",
+        "repo": "test-repo",
+        "ref": "main-xx",
+    }

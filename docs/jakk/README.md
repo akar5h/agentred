@@ -70,13 +70,15 @@ applies_to:                          # which discovered tools to fire against
   tool_name_regex: <pyregex>         # optional, re.search semantics
   min_string_args: <int>             # optional
   require_no_required_args: false    # true → skip tools whose inputSchema.required is non-empty
+  target_arg_kind: path|query|id|url|text  # optional; see "Argument-kind resolution" below
   none: false                        # true → skip tool selection (schema-only)
 
 payload:
   tool: <name>                   # optional override; defaults to matched tool
   arguments:
     <key>: <value>               # strings may use {run_id}
-    __first_string_arg__: <val>  # special: assign to tool's first string arg
+    __first_string_arg__: <val>  # assign to tool's FIRST string-typed arg (position-based)
+    __target_arg__: <val>        # assign to the arg matching applies_to.target_arg_kind (role-based)
 
 # Required when surface == "tool_call" | "tool_list" | "resource_list" | "prompt_list":
 matcher:
@@ -105,6 +107,42 @@ phase_b:                          # B attempts the same read
 
 Matchers receive a `{run_id}`-templated copy of `params`. `marker_template`
 is conventionally promoted into `marker` after template expansion.
+
+## Argument-kind resolution (generalizing across MCP servers)
+
+Different MCP servers name the same conceptual argument differently. A
+path-traversal probe needs to inject into the *path* argument, but that
+arg is called `path` on GitHub's `get_file_contents(owner, repo, path)`,
+`file_path` on breach-to-fix's `read_file_contents(file_path)`, and
+`full_path` on its `list_directory_contents(full_path)`.
+
+`target_arg_kind` solves this without per-server hardcoding. A probe
+declares the *semantic role* of the arg it wants; the scanner inspects
+each tool's `inputSchema` and resolves the role to the actual arg name.
+
+```yaml
+applies_to:
+  tool_name_regex: "(?i)(read|get|file)"   # narrow the candidate pool
+  target_arg_kind: path                     # declare the role
+payload:
+  arguments:
+    __target_arg__: "/etc/passwd"           # lands in whichever arg matched
+```
+
+Resolution (in `jakk/jakk/applies.py:ARG_KINDS`):
+1. First string-typed arg whose **name** matches the kind's name-regex.
+2. Else first string-typed arg whose **description** matches the desc-regex.
+3. Else the tool is filtered out — the probe `skipped`, not `error`.
+
+Registered kinds: `path`, `query`, `id`, `url`, `text`. There is
+deliberately **no `command` kind** — shell-injection probes have no
+schema clue for which arg reaches a shell, so they keep
+`__first_string_arg__` (position-based).
+
+This is what lets one probe library run against any MCP server without a
+per-vendor variant. The same `mcp.path.canary_file_read.yaml` probes
+GitHub MCP, breach-to-fix, and a server we've never seen — the scanner
+finds the path-shaped arg wherever it lives.
 
 ## CLI flags added in v0.2
 

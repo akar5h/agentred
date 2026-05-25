@@ -25,12 +25,17 @@ severity: critical
 expected_signal: input.path_traversal
 
 applies_to:
+  # Narrow to file-content read tools by name, then pick the path-shaped
+  # arg via target_arg_kind so multi-arg signatures (e.g. GitHub's
+  # get_file_contents(owner, repo, path, ref)) get probed correctly rather
+  # than dropping the payload into the wrong field.
   tool_name_regex: "(?i)^(read_file|get_file|cat_file|file_contents|read_file_contents|fetch_file)"
+  target_arg_kind: path
   min_string_args: 1
 
 payload:
   arguments:
-    __first_string_arg__: "/app/files/safe_files_sensitive/secret.txt"
+    __target_arg__: "/app/files/safe_files_sensitive/secret.txt"
 
 matcher:
   kind: secret_pattern

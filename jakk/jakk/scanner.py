@@ -31,20 +31,44 @@ class _UnresolvedFirstStringArg(Exception):
     """Raised when a payload uses ``__first_string_arg__`` but the matched tool exposes no string-typed arg."""
 
 
+class _UnresolvedTargetArg(Exception):
+    """Raised when a payload uses ``__target_arg__`` but either
+    ``target_arg_kind`` isn't set on the probe, or no arg of that kind exists
+    on the matched tool. In practice ``applies.matches()`` already filters
+    out tools missing the kind, so this surfaces only on misconfigured YAML."""
+
+
 def _resolve_arguments(
     arguments: dict[str, Any],
     tool: Optional[ToolDescriptor],
     run_id: str,
+    target_arg_kind: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Expand template strings and the ``__first_string_arg__`` key.
+    """Expand template strings and the position-blind argument keys.
 
-    Raises :class:`_UnresolvedFirstStringArg` if the payload requested
-    substitution into the first string arg but the tool has none — the
-    scanner converts this into an explicit ``skipped`` finding rather
+    Two reserved keys:
+
+    - ``__first_string_arg__`` → first string-typed arg on the tool. Errors
+      if the tool has no string args (probe wasn't compatible after all).
+    - ``__target_arg__`` → arg matching the probe's ``target_arg_kind`` via
+      :func:`applies.find_arg_of_kind`. Errors if ``target_arg_kind`` isn't
+      set, or if the tool has no arg of that kind.
+
+    Both error paths produce an explicit ``skipped`` finding upstream rather
     than silently sending the tool an empty argument map.
     """
+    # Local import to avoid a circular: applies imports from library, scanner
+    # imports from applies, library imports nothing from scanner. The cycle
+    # only closes if we import applies at module-load time.
+    from .applies import find_arg_of_kind
+
     resolved: dict[str, Any] = {}
     first_arg = tool.first_string_arg() if tool else None
+
+    target_arg: Optional[str] = None
+    if tool is not None and target_arg_kind is not None:
+        target_arg = find_arg_of_kind(tool, target_arg_kind)
+
     for key, value in arguments.items():
         if key == "__first_string_arg__":
             if first_arg is None:
@@ -52,6 +76,17 @@ def _resolve_arguments(
                     f"tool {tool.name if tool else '<none>'} has no string-typed argument"
                 )
             key = first_arg
+        elif key == "__target_arg__":
+            if target_arg_kind is None:
+                raise _UnresolvedTargetArg(
+                    "__target_arg__ used in payload but applies_to.target_arg_kind is not set"
+                )
+            if target_arg is None:
+                raise _UnresolvedTargetArg(
+                    f"tool {tool.name if tool else '<none>'} has no argument matching "
+                    f"target_arg_kind={target_arg_kind!r}"
+                )
+            key = target_arg
         if isinstance(value, str):
             value = value.replace("{run_id}", run_id)
         resolved[key] = value
@@ -135,8 +170,8 @@ async def _run_corroborated_marker_echo(
     ):
         run_id = _run_id()
         try:
-            args = _resolve_arguments(args_src, tool, run_id)
-        except _UnresolvedFirstStringArg as exc:
+            args = _resolve_arguments(args_src, tool, run_id, case.applies_to.target_arg_kind)
+        except (_UnresolvedFirstStringArg, _UnresolvedTargetArg) as exc:
             return Finding(
                 test_id=case.id,
                 expected_signal=case.expected_signal,
@@ -450,8 +485,10 @@ async def _run_case(
         run_id = _run_id()
         target = case.payload.tool or tool.name
         try:
-            arguments = _resolve_arguments(case.payload.arguments, tool, run_id)
-        except _UnresolvedFirstStringArg as exc:
+            arguments = _resolve_arguments(
+                case.payload.arguments, tool, run_id, case.applies_to.target_arg_kind
+            )
+        except (_UnresolvedFirstStringArg, _UnresolvedTargetArg) as exc:
             findings.append(
                 Finding(
                     test_id=case.id,

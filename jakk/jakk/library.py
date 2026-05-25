@@ -38,6 +38,25 @@ class AppliesTo(BaseModel):
     none: bool = False
     """If True, do not call any tool — test inspects schema/listing only."""
 
+    target_arg_kind: Optional[Literal["path", "query", "id", "url", "text"]] = None
+    """Semantic role of the argument the probe wants to inject into.
+
+    When set, the probe only fires on tools that expose an argument of the
+    given role (regardless of what the server calls it). Resolution lives in
+    ``applies.find_arg_of_kind`` — see the ``ARG_KINDS`` registry there for
+    the per-kind name/description heuristics.
+
+    Used together with the ``__target_arg__`` payload key (see
+    :class:`Payload`). Without this field, payloads can still use
+    ``__first_string_arg__`` for position-based resolution; with this field,
+    they should use ``__target_arg__`` so the value lands in the right
+    semantic slot, not just the leftmost string slot.
+
+    Intentionally NO ``command`` kind: shell-injection probes target tools
+    where the bug is "this arg gets interpolated into a shell command" — no
+    semantic clue in the schema. Those keep ``__first_string_arg__``.
+    """
+
     @field_validator("tool_name_regex")
     @classmethod
     def _validate_regex(cls, v: Optional[str]) -> Optional[str]:
@@ -59,9 +78,16 @@ class Payload(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     """Argument map. String values may use ``{run_id}`` and ``{first_string_arg}`` markers.
 
-    Special key ``__first_string_arg__`` means: assign the value to whatever
-    the first string-typed parameter of the matched tool is. Useful when the
-    same payload applies to tools with different argument names.
+    Two reserved keys for position-blind argument resolution:
+
+    - ``__first_string_arg__`` — assigns the value to whatever the FIRST
+      string-typed parameter of the matched tool is. Useful when a probe has
+      no semantic clue about which arg matters (e.g. shell-injection probes:
+      "any string field that reaches a shell").
+    - ``__target_arg__`` — assigns the value to the arg that matched
+      ``applies_to.target_arg_kind``. Useful when a probe DOES have a
+      semantic role (e.g. path-traversal: "fill the path-shaped arg").
+      Errors at scan time if ``target_arg_kind`` is not set on the same probe.
     """
 
 
