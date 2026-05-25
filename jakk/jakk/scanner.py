@@ -570,9 +570,28 @@ async def _run_case(
             call.text,
             {"tools": [t.to_dict() for t in tools]},
         )
+        # Outcome resolution (refined 2026-05-23):
+        #   - matcher fired           -> its verdict (vulnerable / echo)
+        #   - transport_error         -> `error` (we couldn't complete the call,
+        #                                so we genuinely couldn't test)
+        #   - tool-result is_error    -> `pass` (the server RAN and rejected our
+        #                                input safely; the matcher evaluated the
+        #                                error text and found no leak). We keep
+        #                                the server's message in evidence so a
+        #                                "rejected safely" pass is distinguishable
+        #                                from a clean-normal-response pass.
+        #   - otherwise               -> matcher verdict (pass)
         outcome = result.outcome
-        if call.is_error and not result.fired:
+        evidence = result.evidence
+        error_note: Optional[str] = None
+        if call.transport_error:
             outcome = "error"
+            error_note = "transport error: tool call did not complete"
+            evidence = evidence or call.text[:200]
+        elif call.is_error and not result.fired:
+            outcome = "pass"
+            if not evidence:
+                evidence = f"server rejected input (no leak): {call.text[:160]}"
         findings.append(
             Finding(
                 test_id=case.id,
@@ -583,11 +602,11 @@ async def _run_case(
                 fired=result.fired,
                 outcome=outcome,
                 tool_name=target,
-                evidence=result.evidence,
+                evidence=evidence,
                 owasp=list(case.owasp),
                 atlas=list(case.atlas),
                 payload={"tool": target, "arguments": arguments},
-                error=("call returned isError=True" if call.is_error and not result.fired else None),
+                error=error_note,
             )
         )
     return findings

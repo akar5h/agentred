@@ -61,6 +61,14 @@ class ToolDescriptor:
 class CallResult:
     text: str
     is_error: bool = False
+    """The MCP tool-result ``isError`` flag: the tool RAN and returned an
+    error result (e.g. 'access denied', 'not found', 'invalid input'). This
+    is a real, evaluable result — the server actively rejected the input."""
+    transport_error: bool = False
+    """The call itself failed to complete (an exception during ``call_tool``:
+    connection drop, protocol error, timeout). We never got a tool result to
+    evaluate. Distinct from ``is_error`` — this is 'couldn't test', not
+    'server rejected our input'."""
     raw: Any = None
 
 
@@ -174,7 +182,26 @@ class MCPClient:
         try:
             result = await self._client.call_tool(name, arguments)
         except Exception as exc:
-            return CallResult(text=f"<call_tool error: {type(exc).__name__}: {exc}>", is_error=True, raw=exc)
+            # IMPORTANT: fastmcp RAISES ToolError when a tool returns an error
+            # result (isError) — it does not surface it as a flag on a returned
+            # value. So a ToolError is a REAL, evaluable result: the server ran
+            # and rejected our input ("not found", "access denied", "invalid").
+            # Any OTHER exception (connection drop, protocol error, timeout) is
+            # a transport failure: we never got a result to evaluate.
+            #
+            # The distinction drives outcome classification downstream:
+            #   ToolError      -> is_error=True,  transport_error=False -> evaluable -> usually `pass`
+            #   other Exception-> is_error=True,  transport_error=True  -> `error` (couldn't test)
+            if _is_tool_error(exc):
+                return CallResult(text=f"<tool error: {exc}>", is_error=True, transport_error=False, raw=exc)
+            return CallResult(
+                text=f"<call_tool error: {type(exc).__name__}: {exc}>",
+                is_error=True,
+                transport_error=True,
+                raw=exc,
+            )
+        # The tool ran and returned a value. is_error reflects its result-level
+        # isError flag (rare in fastmcp — most tool errors raise, see above).
         return CallResult(text=_flatten_content(result), is_error=_is_error(result), raw=result)
 
 
@@ -212,3 +239,19 @@ def _is_error(result: Any) -> bool:
     if val is None:
         val = getattr(result, "is_error", None)
     return bool(val)
+
+
+def _is_tool_error(exc: BaseException) -> bool:
+    """True if ``exc`` is fastmcp's ToolError (a tool that returned an error
+    result), as opposed to a transport/connection exception.
+
+    Imports the class lazily to keep this module import-light; falls back to a
+    class-name check if the import path ever moves.
+    """
+    try:
+        from fastmcp.exceptions import ToolError
+        if isinstance(exc, ToolError):
+            return True
+    except Exception:
+        pass
+    return type(exc).__name__ == "ToolError"

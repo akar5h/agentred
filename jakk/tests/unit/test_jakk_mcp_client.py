@@ -72,3 +72,29 @@ def test_no_auth_no_override_returns_clean():
     kw = _resolve()
     assert kw["auth"] is None
     assert kw["headers"] in (None, {})
+
+
+# ---------------------------------------------------------------------------
+# transport-error vs tool-error classification (drives error-vs-pass outcomes)
+# ---------------------------------------------------------------------------
+
+def test_is_tool_error_recognizes_fastmcp_toolerror():
+    from fastmcp.exceptions import ToolError
+    from jakk.mcp_client import _is_tool_error
+    assert _is_tool_error(ToolError("the tool returned an error result"))
+
+
+def test_is_tool_error_rejects_transport_exceptions():
+    from jakk.mcp_client import _is_tool_error
+    # Connection / protocol / timeout style exceptions are NOT tool errors.
+    assert not _is_tool_error(ConnectionError("connection refused"))
+    assert not _is_tool_error(TimeoutError("timed out"))
+    assert not _is_tool_error(RuntimeError("client failed to connect"))
+
+
+def test_is_tool_error_name_fallback():
+    """If the import path ever moves, the class-name fallback still classifies."""
+    from jakk.mcp_client import _is_tool_error
+    class ToolError(Exception):
+        pass
+    assert _is_tool_error(ToolError("shadowed local class with the right name"))
