@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jakk"
-version = "0.1.0"
+version = "0.2.0"
 description = "Black-box MCP server scanner — fires curated attack-class probes against an MCP endpoint and reports findings."
 readme = "README.md"
 requires-python = ">=3.10"
