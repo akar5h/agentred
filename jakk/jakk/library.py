@@ -101,6 +101,7 @@ class Matcher(BaseModel):
         "secret_pattern",
         "directive_passthrough",
         "schema_field",
+        "cloud_metadata",
     ]
     params: dict[str, Any] = Field(default_factory=dict)
 

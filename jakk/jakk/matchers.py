@@ -149,6 +149,99 @@ def _secret_pattern(params: dict[str, Any], response: str, ctx: dict[str, Any]) 
     return MatcherResult(False, "", "pass")
 
 
+# ---------------------------------------------------------------------------
+# cloud_metadata — SSRF success detector
+# ---------------------------------------------------------------------------
+#
+# This matcher decides whether an SSRF probe SUCCEEDED, by looking for the
+# distinctive shape of a cloud instance-metadata response in the tool's reply.
+#
+# Background — why this is the SSRF signal:
+#   An SSRF (Server-Side Request Forgery) bug is "the server will fetch any
+#   URL you give it, from its own network position." The single most damaging
+#   target is the cloud metadata endpoint at the link-local address
+#   169.254.169.254, reachable ONLY from inside the instance. It hands out the
+#   instance's IAM/role credentials — temporary AWS keys, GCP OAuth tokens,
+#   Azure tokens. If a tool fetches that URL and returns the body, the caller
+#   gets cloud credentials = full account pivot. BlueRock found 36.7% of 7,000
+#   scanned MCP servers vulnerable to exactly this (May 2026).
+#
+# Why a DEDICATED matcher (not just secret_pattern):
+#   We want PRECISE, low-false-positive evidence that what came back is a
+#   metadata response specifically — not just "something secret-shaped." The
+#   patterns below match the documented response *structure* of each cloud's
+#   metadata service, so a `vulnerable` here means "we pulled an actual
+#   metadata document," which is unambiguous and directly reportable.
+#
+# Coverage notes:
+#   - AWS IMDSv1 is the primary, most-reachable target: a plain GET to
+#     /latest/meta-data/iam/security-credentials/<role> needs NO special
+#     headers, so any naive URL-fetch reaches it. This is what the shipped
+#     probe aims at.
+#   - GCP and Azure metadata require request headers (Metadata-Flavor: Google /
+#     Metadata: true) that a naive fetch usually won't add — so they're less
+#     reachable via pure-URL SSRF, but we still detect their response shapes
+#     in case a server proxies headers through.
+_CLOUD_METADATA_PATTERNS: tuple[tuple[str, str], ...] = (
+    # ---- AWS EC2 Instance Metadata Service (IMDS) -----------------------
+    # The IAM security-credentials document. These four keys appear together
+    # in the JSON returned by .../iam/security-credentials/<role>. Matching
+    # AccessKeyId + SecretAccessKey is already conclusive.
+    (r'"AccessKeyId"\s*:\s*"', "AWS IMDS: AccessKeyId field"),
+    (r'"SecretAccessKey"\s*:\s*"', "AWS IMDS: SecretAccessKey field"),
+    # Temporary STS credentials (what IMDS hands out) always start ASIA.
+    # (Long-lived keys start AKIA — also worth flagging if they leak here.)
+    (r"\bASIA[0-9A-Z]{16}\b", "AWS temporary access key id (ASIA...)"),
+    # The success envelope IMDS wraps creds in.
+    (r'"Code"\s*:\s*"Success"', "AWS IMDS: Code:Success envelope"),
+
+    # ---- GCP Compute metadata -------------------------------------------
+    # The token endpoint returns an OAuth2 access token. GCP access tokens
+    # carry the distinctive ya29. prefix.
+    (r'"access_token"\s*:\s*"ya29\.', "GCP metadata: ya29. access token"),
+    # GCP requires this header on requests; servers that echo it confirm reach.
+    (r"(?i)Metadata-Flavor:\s*Google", "GCP metadata: Metadata-Flavor header echo"),
+
+    # ---- Azure Instance Metadata Service (IMDS) -------------------------
+    # Azure token responses pair an access_token with a client_id; the
+    # /metadata/instance/compute document carries vmId + subscriptionId.
+    (r'"access_token"\s*:\s*"[^"]+"\s*,\s*"client_id"', "Azure IMDS: token + client_id"),
+    (r'"subscriptionId"\s*:\s*"[0-9a-fA-F-]{36}"', "Azure IMDS: subscriptionId GUID"),
+)
+
+
+@register("cloud_metadata")
+def _cloud_metadata(params: dict[str, Any], response: str, ctx: dict[str, Any]) -> MatcherResult:
+    """Fire ``vulnerable`` when the response looks like a cloud metadata document.
+
+    Used by SSRF probes: the probe sends the server a metadata-endpoint URL
+    (e.g. ``http://169.254.169.254/latest/meta-data/iam/security-credentials/``)
+    as a tool argument; if the server fetched it and returned the body, the
+    body will match one of the cloud-specific shapes below and we report the
+    SSRF as exploited.
+
+    Outcome:
+      - ``vulnerable`` — a metadata-response shape matched (credentials reached
+        the caller).
+      - ``pass`` — no metadata shape present (server blocked the fetch, refused
+        the link-local address, or isn't running in that cloud).
+
+    Operators can pass extra ``params.patterns`` (list of regex strings) to
+    cover bespoke internal-metadata services beyond the big-three clouds.
+    """
+    extra_patterns = tuple(params.get("patterns", ()))
+    # Built-in (regex, label) pairs first, then any operator-supplied bare regexes.
+    for pat, label in _CLOUD_METADATA_PATTERNS:
+        m = re.search(pat, response)
+        if m:
+            return MatcherResult(True, f"{label}: {_snippet(response, m.group(0))}", "vulnerable")
+    for pat in extra_patterns:
+        m = re.search(pat, response)
+        if m:
+            return MatcherResult(True, _snippet(response, m.group(0)), "vulnerable")
+    return MatcherResult(False, "", "pass")
+
+
 _DIRECTIVE_PATTERNS: tuple[str, ...] = (
     r"(?im)^\s*system\s*[:>]",
     r"(?im)ignore (all )?previous (instructions|messages|prompts)",

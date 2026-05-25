@@ -21,6 +21,7 @@ EXPECTED_IDS = {
     "mcp.auth.invalid_token",
     "mcp.auth.wrong_prefix",
     "mcp.authz.cross_tenant_read",
+    "mcp.ssrf.cloud_metadata",
 }
 
 SAFE_IDS = {
@@ -31,6 +32,7 @@ SAFE_IDS = {
     "mcp.auth.invalid_token",
     "mcp.auth.wrong_prefix",
     "mcp.authz.cross_tenant_read",
+    "mcp.ssrf.cloud_metadata",
 }
 
 

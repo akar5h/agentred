@@ -49,6 +49,7 @@ jakk mcp scan --endpoint http://127.0.0.1:8008/mcp/stream --library jakk/library
 | `mcp.auth.invalid_token` | MCP10 | critical | safe | `auth.token_not_validated` | [tests/mcp.auth.invalid_token.md](tests/mcp.auth.invalid_token.md) |
 | `mcp.auth.wrong_prefix` | MCP10 | high | safe | `auth.scheme_not_enforced` | [tests/mcp.auth.wrong_prefix.md](tests/mcp.auth.wrong_prefix.md) |
 | `mcp.authz.cross_tenant_read` | MCP08 | critical | safe | `authz.cross_tenant_read` | [tests/mcp.authz.cross_tenant_read.md](tests/mcp.authz.cross_tenant_read.md) |
+| `mcp.ssrf.cloud_metadata` | MCP04 | critical | safe | `ssrf.cloud_metadata` | [ssrf/README.md](ssrf/README.md) |
 
 `--safe` runs only the rows with `side_effect: safe` — the 3 auth probes + the 3 response/schema probes (6 total). Use it against any server where state mutation is unacceptable (production, commercial, anything you don't own).
 
@@ -83,7 +84,7 @@ payload:
 # Required when surface == "tool_call" | "tool_list" | "resource_list" | "prompt_list":
 matcher:
   kind: substring | regex | marker_echo | secret_pattern
-      | directive_passthrough | schema_field
+      | directive_passthrough | schema_field | cloud_metadata
   params:                        # kind-specific; see jakk/jakk/matchers.py
     ...
 
