@@ -205,33 +205,62 @@ class MCPClient:
         return CallResult(text=_flatten_content(result), is_error=_is_error(result), raw=result)
 
 
-def _flatten_content(result: Any) -> str:
-    """Flatten a CallToolResult into a single string for matcher consumption."""
+# SECURITY: cap how much of an untrusted server response we hold + match.
+# A hostile (or just buggy) server can return an arbitrarily large body; we
+# read it into memory and run regexes over it. Capping bounds memory/CPU so a
+# multi-GB response can't OOM or hang the scanner. 1 MiB is far more than any
+# real finding needs (secrets, metadata docs, markers all appear early), and
+# matcher evidence is itself snippet-truncated downstream.
+_MAX_RESPONSE_CHARS = 1_048_576  # 1 MiB
+
+
+def _flatten_content(result: Any, max_chars: int = _MAX_RESPONSE_CHARS) -> str:
+    """Flatten a CallToolResult into a single string for matcher consumption.
+
+    Truncates the assembled text to ``max_chars`` (appending a marker) so an
+    oversized untrusted response can't exhaust scanner memory.
+    """
     if result is None:
         return ""
     # fastmcp result types: .content (list of content blocks) or .data (structured output).
     parts: list[str] = []
+    total = 0
+
+    def _add(s: str) -> bool:  # returns False once we've hit the cap
+        nonlocal total
+        if total >= max_chars:
+            return False
+        remaining = max_chars - total
+        parts.append(s[:remaining])
+        total += min(len(s), remaining)
+        return total < max_chars
+
     content = getattr(result, "content", None)
     if content:
         for block in content:
             text = getattr(block, "text", None)
             if text:
-                parts.append(text)
+                if not _add(text):
+                    break
                 continue
             data = getattr(block, "data", None)
-            if data is not None:
-                parts.append(str(data))
+            if data is not None and not _add(str(data)):
+                break
     data = getattr(result, "data", None)
     if data is not None:
-        parts.append(str(data))
+        _add(str(data))
     structured = getattr(result, "structuredContent", None) or getattr(
         result, "structured_content", None
     )
     if structured is not None:
-        parts.append(str(structured))
+        _add(str(structured))
     if not parts:
-        parts.append(str(result))
-    return "\n".join(parts)
+        _add(str(result))
+
+    out = "\n".join(parts)
+    if len(out) >= max_chars:
+        out = out[:max_chars] + "\n<...response truncated by jakk at 1MiB...>"
+    return out
 
 
 def _is_error(result: Any) -> bool:

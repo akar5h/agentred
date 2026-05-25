@@ -35,6 +35,30 @@ def _run_id() -> str:
     return secrets.token_hex(4)
 
 
+def _redact_args(args: dict[str, Any], cfg: "ScanConfig") -> dict[str, Any]:
+    """Mask operator secrets in a payload dict before it's stored in a Finding.
+
+    SECURITY: findings (esp. JSONL) get committed, shared, attached to bug
+    reports, ingested by CI. The actual tool call uses the real values; only
+    the STORED/DISPLAYED copy is masked. Replaces any string arg whose value
+    exactly equals a known secret (--bearer / --cred-a / --cred-b) with a
+    placeholder, so credentials never land in output files.
+    """
+    secrets_map: dict[str, str] = {}
+    if cfg.bearer:
+        secrets_map[cfg.bearer] = "<bearer>"
+    if cfg.cred_a:
+        secrets_map[cfg.cred_a] = "<cred_a>"
+    if cfg.cred_b:
+        secrets_map[cfg.cred_b] = "<cred_b>"
+    if not secrets_map:
+        return args
+    return {
+        k: (secrets_map.get(v, v) if isinstance(v, str) else v)
+        for k, v in args.items()
+    }
+
+
 def _skip_evidence(prefix: str, exc: Exception) -> str:
     """Actionable skip evidence. For unsatisfied required args, tell the
     operator exactly which ``--arg`` values to supply."""
@@ -246,7 +270,7 @@ async def _run_corroborated_marker_echo(
         result = run_matcher("marker_echo", {"marker": marker}, call.text, {})
         entry: dict[str, Any] = {
             "label": label,
-            "args": args,
+            "args": _redact_args(args, cfg),
             "marker": marker,
             "fired": result.fired,
             "evidence": result.evidence,
@@ -382,7 +406,7 @@ async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
                 evidence=f"phase_a (identity A) failed — check --cred-a and --foreign-id: {call_a.text[:200]}",
                 owasp=list(case.owasp),
                 atlas=list(case.atlas),
-                payload={"phase_a": {"tool": phase_a.tool, "arguments": a_args}},
+                payload={"phase_a": {"tool": phase_a.tool, "arguments": _redact_args(a_args, cfg)}},
             )
 
         call_b = await client.call_tool(phase_b.tool, b_args)
@@ -406,8 +430,8 @@ async def _run_authz_case(case: TestCase, cfg: ScanConfig) -> Finding:
         owasp=list(case.owasp),
         atlas=list(case.atlas),
         payload={
-            "phase_a": {"tool": phase_a.tool, "arguments": a_args},
-            "phase_b": {"tool": phase_b.tool, "arguments": b_args},
+            "phase_a": {"tool": phase_a.tool, "arguments": _redact_args(a_args, cfg)},
+            "phase_b": {"tool": phase_b.tool, "arguments": _redact_args(b_args, cfg)},
         },
     )
 
@@ -605,7 +629,7 @@ async def _run_case(
                 evidence=evidence,
                 owasp=list(case.owasp),
                 atlas=list(case.atlas),
-                payload={"tool": target, "arguments": arguments},
+                payload={"tool": target, "arguments": _redact_args(arguments, cfg)},
                 error=error_note,
             )
         )
