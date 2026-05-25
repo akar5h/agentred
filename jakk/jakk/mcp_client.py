@@ -39,6 +39,16 @@ class ToolDescriptor:
                 count += 1
         return count
 
+    def required_args(self) -> list[str]:
+        """Names the tool's inputSchema marks as required (empty if none)."""
+        req = (self.input_schema or {}).get("required") or []
+        return [r for r in req if isinstance(r, str)]
+
+    def has_arg(self, name: str) -> bool:
+        """True if the tool declares an argument with this name."""
+        props = (self.input_schema or {}).get("properties") or {}
+        return name in props
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,

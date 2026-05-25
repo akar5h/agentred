@@ -57,6 +57,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Custom HTTP header. Pass multiple times for multiple headers.",
     )
     scan_p.add_argument(
+        "--arg",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Supply a valid value for a non-target tool argument (e.g. "
+        "--arg owner=octocat --arg repo=Hello-World). Fills any tool-declared "
+        "arg the probe didn't set, so multi-arg tools (get_file_contents, etc.) "
+        "reach the code path under test instead of erroring on a missing "
+        "parameter. Pass multiple times.",
+    )
+    scan_p.add_argument(
         "--cred-a",
         metavar="VALUE",
         help="Identity A's credential. Threaded into authz probe payloads as "
@@ -93,18 +104,24 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_headers(values: list[str]) -> dict[str, str]:
-    headers: dict[str, str] = {}
+def _parse_kv(values: list[str], flag: str) -> dict[str, str]:
+    """Parse repeated KEY=VALUE flags into a dict. Used by --header and --arg."""
+    out: dict[str, str] = {}
     for raw in values:
         if "=" not in raw:
-            raise SystemExit(f"--header expects KEY=VALUE, got {raw!r}")
+            raise SystemExit(f"{flag} expects KEY=VALUE, got {raw!r}")
         key, _, value = raw.partition("=")
         key = key.strip()
-        value = value.strip()
         if not key:
-            raise SystemExit(f"--header key is empty in {raw!r}")
-        headers[key] = value
-    return headers
+            raise SystemExit(f"{flag} key is empty in {raw!r}")
+        # Headers strip whitespace from values; --arg values are passed
+        # verbatim (a context value may legitimately contain spaces).
+        out[key] = value.strip() if flag == "--header" else value
+    return out
+
+
+def _parse_headers(values: list[str]) -> dict[str, str]:
+    return _parse_kv(values, flag="--header")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -141,6 +158,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             return 1
 
     headers = _parse_headers(args.header)
+    context_args = _parse_kv(args.arg, flag="--arg")
 
     cfg = ScanConfig(
         endpoint=args.endpoint,
@@ -150,6 +168,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         cred_a=args.cred_a,
         cred_b=args.cred_b,
         foreign_id=args.foreign_id,
+        context_args=context_args or None,
     )
     findings = asyncio.run(run_scan(selected, cfg))
 

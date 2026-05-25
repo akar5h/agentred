@@ -21,10 +21,30 @@ class ScanConfig:
     cred_a: Optional[str] = None
     cred_b: Optional[str] = None
     foreign_id: Optional[str] = None
+    context_args: Optional[dict[str, str]] = None
+    """Operator-supplied values for non-target tool arguments (``--arg k=v``).
+
+    Many production tools take several required args, only one of which is the
+    injection target (e.g. ``get_file_contents(owner, repo, path)`` — we inject
+    into ``path`` but ``owner``/``repo`` must be valid for the call to run).
+    These fill any tool-declared arg the probe didn't set, so the call reaches
+    the code path under test instead of erroring on a missing parameter."""
 
 
 def _run_id() -> str:
     return secrets.token_hex(4)
+
+
+def _skip_evidence(prefix: str, exc: Exception) -> str:
+    """Actionable skip evidence. For unsatisfied required args, tell the
+    operator exactly which ``--arg`` values to supply."""
+    if isinstance(exc, _UnsatisfiedRequiredArgs):
+        hint = " ".join(f"--arg {name}=<value>" for name in exc.missing)
+        return (
+            f"{prefix}: tool needs required arg(s) {exc.missing} not satisfied by "
+            f"the probe or context. Supply: {hint}"
+        )
+    return f"{prefix}: {exc}"
 
 
 class _UnresolvedFirstStringArg(Exception):
@@ -38,28 +58,46 @@ class _UnresolvedTargetArg(Exception):
     out tools missing the kind, so this surfaces only on misconfigured YAML."""
 
 
+class _UnsatisfiedRequiredArgs(Exception):
+    """Raised when, after filling the target arg + payload args + context args,
+    the tool still has required arguments with no value. Carries the missing
+    names so the scanner can emit an actionable ``skipped`` finding telling the
+    operator which ``--arg k=v`` values to supply — instead of firing a doomed
+    call that the server rejects with a generic 'missing parameter' error."""
+
+    def __init__(self, missing: list[str]):
+        self.missing = missing
+        super().__init__("missing required args: " + ", ".join(missing))
+
+
 def _resolve_arguments(
     arguments: dict[str, Any],
     tool: Optional[ToolDescriptor],
     run_id: str,
     target_arg_kind: Optional[str] = None,
+    context_args: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
-    """Expand template strings and the position-blind argument keys.
+    """Expand template strings, position-blind keys, and operator context args.
 
-    Two reserved keys:
+    Resolution order:
+      1. ``__first_string_arg__`` → first string-typed arg on the tool. Errors
+         if the tool has no string args.
+      2. ``__target_arg__`` → arg matching the probe's ``target_arg_kind`` via
+         :func:`applies.find_arg_of_kind`. Errors if the kind isn't set or no
+         arg matches.
+      3. Explicit payload args (with ``{run_id}`` expansion).
+      4. **Context args** (``--arg k=v``): fill any arg the TOOL declares that
+         the probe didn't already set. Scoped to tool-declared args so we never
+         send a parameter the tool doesn't accept.
+      5. **Required-arg check**: if the tool still has unfilled required args,
+         raise :class:`_UnsatisfiedRequiredArgs` so the scanner emits an
+         actionable ``skipped`` ("supply --arg owner=...").
 
-    - ``__first_string_arg__`` → first string-typed arg on the tool. Errors
-      if the tool has no string args (probe wasn't compatible after all).
-    - ``__target_arg__`` → arg matching the probe's ``target_arg_kind`` via
-      :func:`applies.find_arg_of_kind`. Errors if ``target_arg_kind`` isn't
-      set, or if the tool has no arg of that kind.
-
-    Both error paths produce an explicit ``skipped`` finding upstream rather
-    than silently sending the tool an empty argument map.
+    Each error path produces an explicit ``skipped`` finding upstream rather
+    than silently sending the tool an incomplete argument map.
     """
     # Local import to avoid a circular: applies imports from library, scanner
-    # imports from applies, library imports nothing from scanner. The cycle
-    # only closes if we import applies at module-load time.
+    # imports from applies, library imports nothing from scanner.
     from .applies import find_arg_of_kind
 
     resolved: dict[str, Any] = {}
@@ -69,6 +107,7 @@ def _resolve_arguments(
     if tool is not None and target_arg_kind is not None:
         target_arg = find_arg_of_kind(tool, target_arg_kind)
 
+    # Steps 1-3: probe-supplied args (target + explicit).
     for key, value in arguments.items():
         if key == "__first_string_arg__":
             if first_arg is None:
@@ -90,6 +129,21 @@ def _resolve_arguments(
         if isinstance(value, str):
             value = value.replace("{run_id}", run_id)
         resolved[key] = value
+
+    # Step 4: context args fill tool-declared args the probe didn't set.
+    if tool is not None and context_args:
+        for k, v in context_args.items():
+            if k in resolved:
+                continue  # probe's value wins over context
+            if tool.has_arg(k):
+                resolved[k] = v.replace("{run_id}", run_id) if isinstance(v, str) else v
+
+    # Step 5: required-arg satisfaction check.
+    if tool is not None:
+        missing = [r for r in tool.required_args() if r not in resolved]
+        if missing:
+            raise _UnsatisfiedRequiredArgs(missing)
+
     return resolved
 
 
@@ -170,8 +224,10 @@ async def _run_corroborated_marker_echo(
     ):
         run_id = _run_id()
         try:
-            args = _resolve_arguments(args_src, tool, run_id, case.applies_to.target_arg_kind)
-        except (_UnresolvedFirstStringArg, _UnresolvedTargetArg) as exc:
+            args = _resolve_arguments(
+                args_src, tool, run_id, case.applies_to.target_arg_kind, cfg.context_args
+            )
+        except (_UnresolvedFirstStringArg, _UnresolvedTargetArg, _UnsatisfiedRequiredArgs) as exc:
             return Finding(
                 test_id=case.id,
                 expected_signal=case.expected_signal,
@@ -181,7 +237,7 @@ async def _run_corroborated_marker_echo(
                 fired=False,
                 outcome="skipped",
                 tool_name=target,
-                evidence=f"corroborate phase {label}: {exc}",
+                evidence=_skip_evidence(f"corroborate phase {label}", exc),
                 owasp=list(case.owasp),
                 atlas=list(case.atlas),
             )
@@ -486,9 +542,10 @@ async def _run_case(
         target = case.payload.tool or tool.name
         try:
             arguments = _resolve_arguments(
-                case.payload.arguments, tool, run_id, case.applies_to.target_arg_kind
+                case.payload.arguments, tool, run_id,
+                case.applies_to.target_arg_kind, cfg.context_args,
             )
-        except (_UnresolvedFirstStringArg, _UnresolvedTargetArg) as exc:
+        except (_UnresolvedFirstStringArg, _UnresolvedTargetArg, _UnsatisfiedRequiredArgs) as exc:
             findings.append(
                 Finding(
                     test_id=case.id,
@@ -499,7 +556,7 @@ async def _run_case(
                     fired=False,
                     outcome="skipped",
                     tool_name=target,
-                    evidence=f"payload requires __first_string_arg__ but {exc}",
+                    evidence=_skip_evidence("payload arg resolution", exc),
                     owasp=list(case.owasp),
                     atlas=list(case.atlas),
                 )
