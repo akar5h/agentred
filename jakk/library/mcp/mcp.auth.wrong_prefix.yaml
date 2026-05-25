@@ -10,9 +10,19 @@ description: |
 
   Requires `--bearer` on the command line; produces a `skipped` finding
   otherwise. The bearer is what we mutate; without one we have no probe.
+
+  SEVERITY: low (recalibrated 2026-05-23 after the github-mcp-server run).
+  Accepting a *validly-issued* token in a non-standard format is NOT an
+  authentication bypass — the token is still validated, so an attacker
+  gains nothing they couldn't get by formatting it correctly. This is a
+  spec-conformance issue, not an access-control failure. It rises to a
+  real bypass ONLY in a parser-differential scenario (a strict gateway in
+  front parses the header differently than the origin) — which this probe
+  does not by itself demonstrate. Contrast with `mcp.auth.invalid_token`
+  (a real critical: accepting a *garbage* token = no validation at all).
 owasp: [MCP10]
 atlas: [AML.T0018]
-severity: high
+severity: low
 expected_signal: auth.scheme_not_enforced
 
 auth_override:
